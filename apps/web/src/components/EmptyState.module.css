@@ -1,0 +1,12 @@
+.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--list-min-height);
+  margin: 0;
+  padding: var(--space-4);
+  text-align: center;
+  color: var(--color-text-muted);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius);
+}

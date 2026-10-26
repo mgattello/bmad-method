@@ -25,7 +25,7 @@ eslint.config.js         one ESLint flat config
 packages/contract/       @todo/contract: Todo type, TypeBox schemas, paths, error codes
 apps/api/                @todo/api: Fastify API (routes arrive in Story 1.2)
 apps/api/test/           API integration specs (*.int.test.ts)
-apps/web/                @todo/web: React + Vite client (list and states arrive in Story 1.3)
+apps/web/                @todo/web: React + Vite client: list, loading, empty and error states
 e2e/                     Playwright harness (Story 1.5)
 docs/                    architecture.md, ai-integration-log.md, qa/
 ```
@@ -61,6 +61,14 @@ first on a fresh checkout: `npm run build -w packages/contract`.
 - The web dev server reads `API_PROXY_TARGET` from the process environment, so export it in the
   shell before `npm run dev -w apps/web`.
 - `WEB_PORT` is read by compose.
+
+## Web
+
+`npm run dev -w apps/web` serves the client on port 5173 and proxies `/api/` to
+`API_PROXY_TARGET` (default `http://localhost:3000`). The shell, the input and the list states
+render on their own; until an API is reachable at that target the list shows the Error State
+with a Retry button. Copy for every state lives in `apps/web/src/copy.ts`; the server's error
+`message` is never shown.
 
 ## Docker
 
