@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // Factory mock survives vi.resetModules; App itself is tested in App.test.tsx.
 vi.mock('./api/todos-client.js', () => ({
   listTodos: () => Promise.resolve({ ok: true, data: [] }),
+  createTodo: () => Promise.resolve({ ok: false, code: 'INTERNAL_ERROR' }),
 }));
 
 describe('web entry', () => {

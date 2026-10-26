@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 10-26-2026 15:02
-last_updated: 10-26-2026 20:04
+last_updated: 10-26-2026 20:27
 project: bmad-method
 project_key: NOKEY
 tracking_system: file-system
@@ -45,7 +45,7 @@ development_status:
 
   epic-2: in-progress
   2-1-create-a-todo-through-the-api: done
-  2-2-add-a-todo-from-the-input: backlog
+  2-2-add-a-todo-from-the-input: review
   2-3-tick-and-untick-a-todo: backlog
   2-4-delete-a-todo-and-publish-the-api-contract: backlog
   2-5-keyboard-screen-reader-and-small-screen-fit: backlog

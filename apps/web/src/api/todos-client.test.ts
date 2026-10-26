@@ -1,6 +1,6 @@
 import { ErrorCode, TODOS_PATH } from '@todo/contract';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { listTodos } from './todos-client.js';
+import { createTodo, listTodos } from './todos-client.js';
 
 function jsonResponse(status: number, body: string) {
   return new Response(body, { status, headers: { 'content-type': 'application/json' } });
@@ -83,4 +83,88 @@ describe('listTodos', () => {
 
     await expect(listTodos()).resolves.toEqual({ ok: false, code: ErrorCode.INTERNAL_ERROR });
   });
+});
+
+describe('createTodo', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const created = todos[0]!;
+
+  it('POSTs TODOS_PATH with both JSON headers and the description body', async () => {
+    const fetchMock = stubFetch(jsonResponse(201, JSON.stringify(created)));
+
+    await createTodo('second');
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]).toEqual([
+      TODOS_PATH,
+      {
+        method: 'POST',
+        headers: { accept: 'application/json', 'content-type': 'application/json' },
+        body: JSON.stringify({ description: 'second' }),
+      },
+    ]);
+  });
+
+  it('returns the created Todo on 201', async () => {
+    stubFetch(jsonResponse(201, JSON.stringify(created)));
+
+    await expect(createTodo('second')).resolves.toEqual({ ok: true, data: created });
+  });
+
+  it('returns VALIDATION_ERROR and discards the message on 400', async () => {
+    stubFetch(jsonResponse(400, JSON.stringify({ code: 'VALIDATION_ERROR', message: 'too long' })));
+
+    const result = await createTodo('x');
+
+    expect(result).toEqual({ ok: false, code: ErrorCode.VALIDATION_ERROR });
+    expect(JSON.stringify(result)).not.toContain('too long');
+  });
+
+  it('returns NOT_FOUND on a 404 envelope', async () => {
+    stubFetch(jsonResponse(404, JSON.stringify({ code: 'NOT_FOUND', message: 'no' })));
+
+    await expect(createTodo('x')).resolves.toEqual({ ok: false, code: ErrorCode.NOT_FOUND });
+  });
+
+  it('returns INTERNAL_ERROR and discards the message on a 500 envelope', async () => {
+    stubFetch(jsonResponse(500, JSON.stringify({ code: 'INTERNAL_ERROR', message: 'db down' })));
+
+    const result = await createTodo('x');
+
+    expect(result).toEqual({ ok: false, code: ErrorCode.INTERNAL_ERROR });
+    expect(JSON.stringify(result)).not.toContain('db down');
+  });
+
+  it('maps a 2xx object whose id is not a string to INTERNAL_ERROR', async () => {
+    stubFetch(jsonResponse(201, JSON.stringify({ id: 1 })));
+
+    await expect(createTodo('x')).resolves.toEqual({ ok: false, code: ErrorCode.INTERNAL_ERROR });
+  });
+
+  it('maps a 502 HTML body to INTERNAL_ERROR', async () => {
+    stubFetch(new Response('<html>502 Bad Gateway</html>', { status: 502 }));
+
+    await expect(createTodo('x')).resolves.toEqual({ ok: false, code: ErrorCode.INTERNAL_ERROR });
+  });
+
+  it('maps a network failure to INTERNAL_ERROR without throwing', async () => {
+    stubFetch(new TypeError('Failed to fetch'));
+
+    await expect(createTodo('x')).resolves.toEqual({ ok: false, code: ErrorCode.INTERNAL_ERROR });
+  });
+
+  it.each(['[]', 'null', '"x"', '{}', 'not json'])(
+    'maps a 2xx body that is not a Todo (%s) to INTERNAL_ERROR',
+    async (body) => {
+      stubFetch(jsonResponse(201, body));
+
+      await expect(createTodo('x')).resolves.toEqual({
+        ok: false,
+        code: ErrorCode.INTERNAL_ERROR,
+      });
+    },
+  );
 });
