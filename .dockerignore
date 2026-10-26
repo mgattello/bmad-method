@@ -16,3 +16,6 @@ playwright-report
 .claude
 CONTEXT.md
 PRD.md
+*.db
+*.db-wal
+*.db-shm

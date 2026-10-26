@@ -75,3 +75,110 @@ not type-checked).
 **Limitations.** The web placeholder shows the list endpoint path on
 screen so the smoke test exercises the contract import; Story 1.3 replaces that shell. No
 Docker was available locally, which this story did not need.
+
+## Story 1.2: API lists Todos from a durable SQLite store and reports health
+
+**Date:** 2026-10-26
+
+**Agent usage.** Claude Code (model Fable 5.1) ran as a BMAD build dispatch agent with the
+story spec as its only brief. It read the spec's `context:` files (the epic 1 context and the
+architecture spine), then replaced the `apps/api` placeholder with the layered Fastify app:
+`buildApp` as the composition root with the error and not-found handlers, `routes/todos.ts`
+and `routes/health.ts`, `TodoService`, the `TodoRepository` port with `SqliteTodoRepository`
+and `InMemoryTodoRepository`, and `server.ts` as the only env reader. It wrote the three unit
+suites and three integration specs, updated the docs, and ran every verification command itself
+(`npm ci`, `npm run build`, `npm run lint`, `npm test`, `npm run test:int`, `npm run test:e2e`
+and the `tsx` smoke run with `curl`). A dispatcher session planned the spec, checked the diff
+against it, ran the review round and re-engaged the same implementation agent for the fixes.
+
+**Prompts.** One prompt: implement the story spec, treating it as the sole source of truth, load
+its context files first, and report what changed, how it was verified and what is left. One
+follow-up message listed the five review findings to fix with the smallest change each.
+
+**MCPs and tools.** No MCP servers were used. Version facts came from `npm view`. Before writing
+any code the agent did a throwaway install of the pinned stack in a scratch directory and ran two
+probe scripts, which confirmed: better-sqlite3 13.0.3 ships `prebuilds/` for darwin, linux and
+linuxmusl, so `npm ci` compiles nothing (see Limitations for the node-gyp configure step);
+`@fastify/type-provider-typebox` 6.3.0 exports `TypeBoxTypeProvider` and
+`FastifyPluginAsyncTypebox` and re-exports typebox 1.x; a Fastify 5 error handler sees
+`statusCode` 400 with `validation` set for schema failures and `FST_ERR_CTP_INVALID_JSON_BODY`
+for malformed JSON; `reply.elapsedTime` is available in `onResponse`; a closed better-sqlite3
+connection throws `The database connection is not open` and `close()` twice does not throw; and
+Fastify's default 404 body is `{ message, error, statusCode }`, so it had to be replaced.
+
+**Version pins.** Every package the spine's Stack table assigns to this story exists at exactly
+that version and was installed as pinned: fastify 5.12.7, @fastify/type-provider-typebox 6.3.0,
+typebox 1.4.3, ajv-formats 3.0.1, better-sqlite3 13.0.3, @types/better-sqlite3 9.6.0, tsx
+4.23.15. No deviation. `@fastify/sensible` is in the Stack table but the spec forbids it here.
+
+**What the AI missed, and debugging.** Everything below was caught by the story's own
+verification commands or by the probe, not by a reviewer:
+
+1. The probe showed Fastify 5.12.7 prints deprecation `FSTDEP023` for the top-level
+   `disableRequestLogging` option the spec names. The intent (no default request lines, one
+   custom completion line) is met with the replacement API,
+   `logController: new LogController({ disableRequestLogging: true })`, so the server starts
+   without a warning.
+2. `tsc` failed twice on first build: Fastify 5.12 types the `setErrorHandler` error as
+   `unknown`, so `error.statusCode` did not compile (fixed with a `statusOf(error: unknown)`
+   helper that trusts only a numeric `statusCode`); and `return { status: 'ok' }` in the health
+   route widened to `string` against the TypeBox-typed response (fixed with typed `HealthBody`
+   constants).
+3. `npm run lint` then failed in `typecheck`: the `tsconfig.test.json` from Story 1.1 included
+   `test/**/*.ts` but inherited `rootDir: "src"`, which no file had exercised until the first
+   integration spec existed (TS6059). Fixed with `rootDir: "."` in the test tsconfig; it is
+   `noEmit`, so nothing else changes.
+4. `@types/better-sqlite3` types `db.pragma()` as `unknown`; the repository unit test needed a
+   cast to read `table_info` column names.
+5. Two self-inflicted slips while editing: a `perl` substitution on the README used `|` as its
+   delimiter while the Markdown table rows contain `|`, which corrupted the file (rewritten in
+   full), and the first smoke run pointed at `apps/api/node_modules/.bin/tsx`, which does not
+   exist in a hoisted workspace (the binary is in the root `node_modules/.bin`).
+6. While applying the review fixes, the agent's rewrite of this log's Limitations paragraph
+   overwrote the Story 1.1 Limitations paragraph and dropped the rest of this entry. The
+   dispatcher restored the file from the last commit and re-appended the entry, which is why the
+   spec forbids touching existing entries.
+
+**Decisions made while implementing.** Routes register the full `TODOS_PATH` and `HEALTH_PATH`
+from the contract, as the spec words it, rather than a prefix plus `/todos`. The `SELECT 1` ping
+is prepared directly, not through the `scoped` helper: the helper is the owner seam for todos
+queries and an owner filter on a connection probe would be meaningless. Error messages are three
+fixed strings (`Not found`, `Invalid request`, `Unexpected error`) so no library text can leak.
+`InMemoryTodoRepository` mirrors the SQL order (createdAt desc, insertion desc), so the service
+test also uses an unordered stub repository to prove the service's own stable sort. Because no
+write routes exist yet, the unit test proves the `VALIDATION_ERROR` branch and the Ajv
+`coerceTypes: false` / `removeAdditional: false` settings by adding throwaway routes to the
+built app (a thrown error with `statusCode: 418`, a `POST` with a TypeBox body schema, malformed
+JSON). `ajv-formats` is installed only because the type provider declares it as a peer;
+Fastify's default Ajv already registers formats, so nothing calls it. `NODE_ENV` is read and
+logged once at startup; nothing branches on it. `*.db`, `*.db-wal` and `*.db-shm` were added to
+`.gitignore` and `.dockerignore` because the README's local-run example writes
+`apps/api/todos.db` inside the workspace. `server.ts` handles `SIGINT` and `SIGTERM` by calling
+`app.close()`, which runs the `onClose` hook that closes the repository; the smoke run confirmed
+exit code 0 and the port released. The Story 1.1 deferred item was applied: `--passWithNoTests`
+is gone from the api `test:int` script now that three specs exist.
+
+**Review rounds.** Before the review the dispatcher replaced two `/api/v1/nope` test literals
+with `${API_PREFIX}/nope` so no `/api/v1` literal exists outside the contract. Round 1 (build
+review, three parallel reviewers: blind hunter, edge-case hunter, verification gap) raised 27
+findings, triaged into 21 rows: 5 patched, 1 deferred, 15 rejected. Patched: `*.db` files were
+git-ignored but not docker-ignored and the README implied the local database lands at the repo
+root (it lands in `apps/api/`); the todos integration seed opened the file without creating the
+table, so the second test depended on the first; the 4xx branches of the error handler logged
+nothing, so a validation failure could not be diagnosed; the `createdAt` format invariant that
+makes string order time order was unstated on the port; and this entry's native-build paragraph
+contradicted itself and named a Dockerfile that does not exist yet. Deferred: `server.ts` has no
+automated test (Story 1.5 boots the built image through it). Rejected findings were loud-failure
+startup cases (invalid `PORT` or `LOG_LEVEL`, unwritable `DB_PATH`), a shutdown deadline, WAL and
+VACUUM edge cases, and the prefix-versus-full-path registration style.
+
+**Limitations.** npm 11's allow-scripts gate blocks esbuild's `postinstall` with a warning; `tsx`
+still runs because esbuild resolves its platform package without that script. better-sqlite3 has
+no install script, but because it ships a `binding.gyp` npm runs its implicit `node-gyp rebuild`
+during `npm ci`: on this machine that ran only the configure step
+(`node_modules/better-sqlite3/build/` holds `Makefile`, `config.gypi` and `obj.target`, and no
+`.node`), nothing was compiled, and the module loads `prebuilds/<platform>.node`. That configure
+step needs Python 3 on the host, now listed in the README prerequisites; the Story 1.4 api
+Dockerfile `deps` stage is planned to install `python3 make g++` (AD-13). No Docker was available
+locally, which this story did not need. Coverage for the api is 100% lines and 95% branches with
+`src/server.ts` excluded as process wiring.

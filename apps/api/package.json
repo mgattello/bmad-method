@@ -3,14 +3,24 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Todo HTTP API (Fastify, SQLite); routes arrive in Story 1.2",
+  "description": "Todo HTTP API: Fastify routes, TodoService, SQLite repository (better-sqlite3)",
   "scripts": {
     "build": "tsc",
+    "dev": "tsx watch src/server.ts",
     "typecheck": "tsc -p tsconfig.test.json",
     "test": "vitest run --coverage",
-    "test:int": "vitest run --config vitest.int.config.ts --passWithNoTests"
+    "test:int": "vitest run --config vitest.int.config.ts"
   },
   "dependencies": {
-    "@todo/contract": "*"
+    "@fastify/type-provider-typebox": "6.3.0",
+    "@todo/contract": "*",
+    "ajv-formats": "3.0.1",
+    "better-sqlite3": "13.0.3",
+    "fastify": "5.12.7",
+    "typebox": "1.4.3"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "9.6.0",
+    "tsx": "4.23.15"
   }
 }

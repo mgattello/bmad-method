@@ -8,6 +8,8 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts'],
+      // Entry point only wires env and listen.
+      exclude: ['src/server.ts'],
       thresholds: { lines: 70, branches: 70 },
     },
   },

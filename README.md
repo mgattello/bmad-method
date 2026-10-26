@@ -10,6 +10,8 @@ decisions live in the architecture spine it links to. Every story appends to
 ## Prerequisites
 
 - Node.js 24 (see `.nvmrc`) and npm 11
+- Python 3 (node-gyp's configure step for better-sqlite3; nothing is compiled, prebuilt bindings are
+  used)
 - Docker with Compose v2 (added in Story 1.4)
 
 ## Layout
@@ -23,8 +25,9 @@ eslint.config.js         one ESLint flat config
 .gitignore, .dockerignore      build outputs and secrets kept out of git and images
 .env.example             every environment variable with its default
 packages/contract/       @todo/contract: Todo type, TypeBox schemas, paths, error codes
-apps/api/                @todo/api: Fastify API (routes arrive in Story 1.2)
-apps/api/test/           API integration specs (*.int.test.ts)
+apps/api/                @todo/api: Fastify API on SQLite (better-sqlite3)
+apps/api/src/            app.ts (buildApp), server.ts (env + listen), routes/, service/, repository/
+apps/api/test/           API integration specs (*.int.test.ts, fastify.inject on a temp SQLite file)
 apps/web/                @todo/web: React + Vite client (list and states arrive in Story 1.3)
 e2e/                     Playwright harness (Story 1.5)
 docs/                    architecture.md, ai-integration-log.md, qa/
@@ -43,13 +46,28 @@ Run from the repository root.
 | `npm ci`           | Install every workspace from the one root `package-lock.json`                            |
 | `npm run build`    | Build contract, then api, then web                                                       |
 | `npm test`         | Unit tests with coverage (70% lines and branches per app) for all three                  |
-| `npm run test:int` | API integration tests (`apps/api/test/*.int.test.ts`; specs land in 1.2)                 |
+| `npm run test:int` | API integration tests (`apps/api/test/*.int.test.ts`): todos, health, error envelope     |
 | `npm run test:e2e` | E2E against the built images (placeholder until Story 1.5)                               |
 | `npm run lint`     | Build contract, ESLint, Prettier check, then type-check every workspace (tests included) |
 | `npm run format`   | Prettier write                                                                           |
 
 Workspace scripts can be run alone, for example `npm run dev -w apps/web`. Build the contract
 first on a fresh checkout: `npm run build -w packages/contract`.
+
+### Run the API locally
+
+```sh
+npm run build -w packages/contract
+DB_PATH=./todos.db npm run dev -w apps/api
+```
+
+The API listens on `http://localhost:3000` (`HOST` and `PORT` override that), creates the SQLite
+file at `DB_PATH` on first start, and reloads on source changes (`tsx watch`). Try
+`curl localhost:3000/api/v1/todos` (a JSON array, newest first) and
+`curl localhost:3000/api/v1/health` (`{"status":"ok"}`). Every request logs one JSON line with
+`method`, `url`, `statusCode` and `responseTime`. The workspace script runs with `apps/api` as its
+working directory, so the example creates `apps/api/todos.db`; `*.db`, `*.db-wal` and `*.db-shm`
+are ignored by git and by the Docker build context.
 
 ## Configuration
 

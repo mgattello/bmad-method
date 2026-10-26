@@ -9,3 +9,6 @@ coverage/
 *.log
 test-results/
 playwright-report/
+*.db
+*.db-wal
+*.db-shm
