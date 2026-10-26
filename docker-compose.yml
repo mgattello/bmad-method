@@ -1,0 +1,73 @@
+# Bare `docker compose up` runs the built images; `--profile dev` adds hot reload (AD-11).
+# Health is owned by each Dockerfile's HEALTHCHECK; no healthcheck block here.
+name: todo
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: '3000'
+      DB_PATH: /data/todos.db
+      LOG_LEVEL: info
+    volumes:
+      - todo-data:/data
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    ports:
+      - '${WEB_PORT:-8080}:8080'
+    depends_on:
+      api:
+        condition: service_healthy
+
+  # Dev profile: repo mounted at /app, node_modules kept in anonymous volumes so native modules build in the container.
+  api-dev:
+    profiles: [dev]
+    image: node:24
+    init: true
+    working_dir: /app
+    # chown first so a fresh volume is handed to node whichever service mounts it first.
+    command: sh -c "chown node:node /data && npm ci && npm run dev:api"
+    environment:
+      NODE_ENV: development
+      HOST: 0.0.0.0
+      PORT: '3000'
+      DB_PATH: /data/dev.db
+      LOG_LEVEL: info
+    ports:
+      - '3000:3000'
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/packages/contract/node_modules
+      - /app/apps/api/node_modules
+      - /app/apps/web/node_modules
+      - todo-data:/data
+
+  web-dev:
+    profiles: [dev]
+    image: node:24
+    init: true
+    working_dir: /app
+    command: sh -c "npm ci && npm run build -w packages/contract && npm run dev -w apps/web"
+    environment:
+      API_PROXY_TARGET: http://api-dev:3000
+    ports:
+      - '5173:5173'
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/packages/contract/node_modules
+      - /app/apps/api/node_modules
+      - /app/apps/web/node_modules
+    depends_on:
+      - api-dev
+
+volumes:
+  todo-data: {}

@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 10-26-2026 15:02
-last_updated: 10-26-2026 20:04
+last_updated: 10-26-2026 20:07
 project: bmad-method
 project_key: NOKEY
 tracking_system: file-system
@@ -39,7 +39,7 @@ development_status:
   1-1-scaffold-the-workspace-and-the-api-contract-package: done
   1-2-api-lists-todos-from-a-durable-sqlite-store-and-reports-heal: done
   1-3-web-shell-shows-the-todo-list-with-loading-empty-and-error-s: done
-  1-4-run-the-whole-stack-with-docker-compose-up: backlog
+  1-4-run-the-whole-stack-with-docker-compose-up: done
   1-5-e2e-harness-proves-the-empty-and-failed-load-journeys-agains: backlog
   epic-1-retrospective: optional
 

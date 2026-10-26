@@ -255,6 +255,107 @@ tree, `npm run dev -w apps/web` shows the Error State with Retry until Story 1.2
 guard's cleanup is removed, because React 19 makes `setState` on an unmounted component a silent
 no-op, so it documents the behaviour rather than guarding it. Docker was not needed.
 
+## Story 1.4: Run the whole stack with docker compose up
+
+**Date:** 2026-10-26
+
+**Agent usage.** Claude Code (model Fable 5.1) ran as a BMAD build dispatch agent on branch
+`epic-1/story-1-4`, with the story spec as its only brief. It read the spec's `context:` files (the
+epic 1 context and the architecture spine), inspected the root configs, the three workspace
+`package.json` files, `server.ts`, the web build settings and the nginx base image, then wrote the
+two Dockerfiles, `apps/web/nginx.conf` and `docker-compose.yml`, added `concurrently` and the
+`dev:api` script, and updated `.env.example`, the README and this log. It ran every verification
+command itself against Docker on Colima (`aarch64`, Compose v5.6.1): `docker compose up --build -d
+--wait`, the `curl` checks, the persistence check across `docker compose restart`, both `config`
+validations, `npm run lint`, `npm test`, the `git diff main` boundary check, and beyond the spec's
+list it also started the `dev` profile for real and exercised the proxy with `api` stopped.
+
+**Prompts.** One prompt: implement the story spec, treating it as the sole source of truth, load its
+context files first, and report what changed, how it was verified and what is left. No follow-up
+prompting was needed.
+
+**MCPs and tools.** No MCP servers were used. The agent worked through the shell: `docker`,
+`docker compose`, `curl`, `npm`, `git` and `perl` for in-place edits. Before writing any file it
+pulled both base images to confirm they exist as pinned (`nginxinc/nginx-unprivileged:1.30-alpine` is
+nginx 1.30.6, runs as uid 101 and ships busybox `wget`; `node:24-alpine` is Node 24.22.1) and
+checked `npm view concurrently@10.0.6`.
+
+**What the AI missed, and debugging.** The stack came up healthy on the first `up --build --wait`
+and every acceptance criterion passed on the first run, so the debugging was in reading the evidence
+rather than fixing failures:
+
+1. The spec's Code Map says no arm64 prebuild of `better-sqlite3` was found, so the `deps` toolchain
+   compiles it. That is not what happens: 13.0.3 ships `prebuilds/linuxmusl-arm64.node`, and npm
+   11's install-scripts gate did not run `node-gyp rebuild` inside the image either (the build log
+   shows the warning and no `build/Release` exists in the runtime image). The `python3 make g++`
+   layer stays because AD-13 requires it and it is what makes the build portable to a platform
+   without a prebuild, but on this machine it compiles nothing. Only `aarch64` under Colima was
+   tested; the `linuxmusl-x64` prebuild path is unverified here, so an x86_64 runner may exercise
+   the toolchain.
+2. `docker compose logs api | grep -c 'request completed'` counts more lines than the `curl` calls
+   made, because the api `HEALTHCHECK` is itself a `GET /api/v1/health` every 5 seconds and each one
+   logs a completion line. The invariant (one line per request) holds; the count is requests plus
+   health probes.
+3. The spec's verification command `docker image ls todo-api todo-web` is not valid (`image ls`
+   takes at most one repository); `docker image ls --filter reference='todo-*'` was used instead.
+4. The first README wording for running only the hot-reload pair said "stop them with ... up";
+   rewritten before the Prettier check.
+
+**Decisions made while implementing.** `add_header` uses `always` on both headers so the nginx 502
+page served while `api` is down also carries `nosniff` and the CSP (verified with `docker compose
+stop api`); without it nginx drops custom headers on 5xx. The api `runtime` stage copies the six
+workspace items the spec lists (root `package.json` and `node_modules`, each workspace's
+`package.json` and `dist`) rather than all of `/app`, so sources, tests and tsconfigs never ship;
+the `node_modules/@todo/contract` symlink resolves because the relative layout is kept.
+`tsconfig.base.json` is copied into the `build` stage because every workspace tsconfig extends it.
+The web Dockerfile keeps the `npm prune --omit=dev` step even though its runtime copies only
+`dist`, so the `build` recipe reads the same in both files. The compose `api` service repeats the
+env block the Dockerfile already sets, so `docker compose config` shows the whole operational
+envelope in one place; `api-dev` sets `NODE_ENV=development` and the same `HOST`, `PORT` and
+`LOG_LEVEL`. Both `HEALTHCHECK`s use the shell form so the `node -e` quoting reaches `sh` intact.
+The dev services run `node:24` (Debian) as the spec settled, and `better-sqlite3` loads its
+`linux-arm64` prebuild there too. Measured: `todo-api` 77.8 MB content (319 MB on disk), `todo-web`
+26 MB content (90.7 MB on disk); the web build reused every `deps` layer from the api build; the
+dev profile's in-container `npm ci` took under ten seconds on this network. The dispatcher's
+review then patched five things: `dev:api` and `web-dev` build the contract once before their
+watchers start (a fresh clone has no `packages/contract/dist`, and `tsx watch` only watches files
+it loaded, so it never recovered from the first failed import); `api-dev` runs
+`chown node:node /data` first so a brand-new `todo-data` volume is handed to `node` whichever
+service mounts it first; both dev services set `init: true` so `sh -c` as PID 1 no longer swallows
+SIGTERM and `docker compose stop` returns at once instead of after the 10 s SIGKILL; nginx gained
+`location /assets/ { try_files $uri =404; }` so a missing hashed bundle is a 404 rather than
+`index.html` served as a module script; and the README and `.env.example` wording was corrected
+(a `package.json` change also invalidates the `deps` layer; a copied `.env` only sets `WEB_PORT`).
+
+**Review rounds.** Round 1 (build review, three layers: blind hunter, edge-case hunter,
+verification gap) raised 27 findings (19 rows after grouping duplicates): 7 patched, 7 rejected,
+5 deferred as one entry. The patches: the contract is built once before `tsx watch` and Vite start
+(a fresh clone has no `dist`, and `tsx watch` never recovers from a failed first import); `api-dev`
+chowns `/data` to `node` so a fresh volume is safe whichever service mounts it first; `init: true`
+on both dev services so `docker compose stop` reaches the watchers instead of waiting 10 s for a
+SIGKILL; `/assets/*` misses return 404 instead of `index.html`; README, `.env.example` and this
+log wording. Rejected: re-resolving `api` in nginx (departs from AD-9 and only matters when `api`
+is recreated alone), a `PORT`-aware probe (AD-11 fixes the probe), a restart policy (excluded by
+intent), `/api` without a slash falling to the page, nested `node_modules` not copied (none exist
+and a miss fails `up --wait` loudly), root-owned dev output on Linux hosts (macOS here), and a
+stale local `dist` (the image's `index.html` was inspected directly). Deferred: E2E-level checks of
+the proxy passthrough, the headers and `/healthz`, restart persistence, the dev chain and the
+non-root uids once the Story 1.5 harness exists. The implementer was re-engaged for the patches;
+the dispatcher then re-ran the full stack, the restart check, lint and tests green.
+
+**Limitations.** Two operational edges are worth knowing. First, `todo-data` is initialised by
+whichever container mounts it first: `api` creates `/data` owned by `node`, but `node:24` has no
+`/data`, so before the review patch a `--profile dev` start on a brand-new volume left `/data`
+owned by root and the non-root `api` could not create `todos.db`; `api-dev` now chowns `/data` on
+start, which was not re-run live here. Second, nginx resolves `api` once at startup; `docker compose restart` and
+`stop`/`start` kept the same address and the proxy recovered (verified), but recreating `api` with
+a new address would need `web` restarted. The CSP was checked only by inspecting the built
+`index.html` (one external module script, one stylesheet, nothing inline); a browser-level check of
+the page under `default-src 'self'` waits for the Story 1.5 Chromium run. No `POST` route exists yet,
+so the persistence check seeded one row directly in `/data/todos.db` with `node` inside the api
+container before `docker compose restart`. On first start `api-dev` restarts once because the
+contract's `tsc --watch` rewrites `dist/` and `tsx watch` notices; harmless.
+
 ## Story 2.1: Create a Todo through the API
 
 **Date:** 2026-10-26
