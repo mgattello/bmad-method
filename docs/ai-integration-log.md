@@ -429,3 +429,77 @@ check its own writes. The `ValidationError` branch and the generic 4xx mapping b
 so a regression that drops the branch would only change the message, which the app and
 integration suites pin. Docker was not needed. Before this review round the api unit suite had 35
 tests at 100% lines and 100% branches, and the integration suite 20 tests.
+
+## Story 2.2: Add a Todo from the input
+
+**Date:** 2026-10-26
+
+**Agent usage.** Claude Code (model Fable 5.1) ran as a BMAD build dispatch agent in a git
+worktree on branch `epic-2/story-2-2`, with the story spec as its only brief. It read the spec's
+`context:` files (the epic 2 context and the architecture spine), then the whole of `apps/web`,
+the contract exports, the root configs and the docs the spec names, and extended the Story 1.3
+files in place: `createTodo` in the client, `create`, `creating` and `writeError` in `useTodos`,
+the `create` copy table and `addLabel` in `copy.ts`, `messageId` on `ErrorBanner`, the new
+`TodoInput` props with focus handling, and the `App` wiring. It extended the four web test suites,
+wrote `e2e/support/todos.ts`, `e2e/create.spec.ts` and `e2e/validation.spec.ts` for the Story 1.5
+harness, updated the README and this log, and ran every verification command itself
+(`npm run build`, `npm run lint`, `npm test`, the spec's greps and the diff check against the
+baseline commit).
+
+**Prompts.** One prompt: implement the story spec, treating it as the sole source of truth, load
+its context files first, and report what changed, how it was verified and what is left.
+
+**MCPs and tools.** No MCP servers were used. The agent worked through the shell: heredocs for
+file writes, a `python3` script for the README paragraph, `prettier`, `eslint`, `tsc -b`,
+`vitest` and `git`. No probe install was needed: jsdom's implicit form submission on a submit
+button click, `ref.focus()` moving `document.activeElement`, and Vitest's automock of the client
+module were already in the installed stack.
+
+**What the AI missed, and debugging.** The 68 web tests passed on the first run at 100% lines
+and branches, and `tsc -b` and ESLint were clean. The first `npm run lint` failed only in
+Prettier, on one over-long `expect(...).toHaveLength(` line in `App.test.tsx`; fixed with
+`prettier --write` and the lint re-run in full.
+
+**Decisions made while implementing.** The client's 2xx check is a small `isTodo` guard (object
+with a string `id`) rather than a full schema check, matching the spec and keeping the client
+free of TypeBox. `create` clears `writeError` before trimming, so a message is cleared when a
+submit starts and not while typing; `load` clears it too so a Retry never leaves a stale create
+message behind. The hook keeps `creatingRef` as the synchronous in-flight guard and `creating`
+state only for the disabled control, so two `fireEvent.submit` calls in one tick reach the client
+once. `TodoInput` focuses the input before awaiting `onSubmit` and again after, because clicking
+Add moves focus to the button and disabling it mid-request would drop focus to `body`. The
+`create` while `error` case is allowed to call the client (the hook does not know why the caller
+let it through) but inserts nothing; `App` prevents it in practice by disabling Add outside
+`ready`. The E2E specs hard-code `/api/v1/todos` and the 500 limit with a comment each because
+the `e2e` workspace has no dependencies yet; Story 1.5 can swap them for the contract exports.
+`docs/architecture.md` already describes this behaviour and was left unchanged.
+
+**Review rounds.** Round 1 (build review, three parallel layers: blind hunter, edge-case hunter,
+verification gap) raised 22 findings, triaged into 16 rows: 6 patched, 10 rejected, 0 deferred.
+Patched: the E2E purge threw on the 404 that `DELETE` answers until Story 2.4, so every test
+after the first would have failed in `beforeEach` (the purge now tolerates 404, the specs wait
+for Add to be enabled and assert relative counts with unique descriptions); the pre-await
+`focus()` in `TodoInput` was unpinned (deleting it left the suite green), so a deferred
+`onSubmit` test now asserts focus during the pending window; the client suite lacked a `500`
+envelope case and a `2xx { id: 1 }` case; the E2E server `400` and `502` cases lacked the
+`aria-describedby` and focus assertions; two generated E2E titles had the wrong article; and
+the E2E copy, limit and path literals were mirrored across three files, now hoisted into
+`e2e/support/copy.ts`. The dispatcher also replaced a `#id` selector built from `useId` output
+with an `[id="..."]` attribute selector. Rejected: a worker race between spec files (AD-12 binds
+the harness to `workers: 1`); a repeated identical local rejection not re-announcing (message
+still shown and referenced by `aria-describedby`); keystrokes typed during a pending create being
+cleared, and focus pulled back to the input, both inside the 100 ms action bound; `aria-invalid`
+or a duplicate insert in states the disabled Add control cannot reach; `createTodo` or
+`onSubmit` rejecting (neither can); and a fuller `isTodo` guard for bodies the API's schema
+serialisation cannot produce. After the round: web suite 71 tests at 100% lines and branches,
+lint clean.
+
+**Limitations.** The two E2E specs are written, Prettier-clean and ESLint-clean but not executed
+here: there is no Playwright, no `playwright.config.ts` and no running stack in this tree, so
+Story 1.5 is the first run of `e2e/create.spec.ts` and `e2e/validation.spec.ts`. The purge
+helper issues `DELETE` per Todo and tolerates a 404 until Story 2.4 adds the route; the specs
+wait for Add to be enabled and assert relative list counts, so they do not depend on an empty
+store. The `git diff main` boundary check is read against the spec's
+baseline commit `82c339d`, because this branch predates the Story 1.4 merge and `main` now holds
+the Dockerfiles that the branch does not. Focus assertions run in jsdom, so visible focus and the
+danger border are asserted by CSS rather than by a test.

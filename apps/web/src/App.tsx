@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import styles from './App.module.css';
 import { EmptyState } from './components/EmptyState.js';
 import { ErrorBanner } from './components/ErrorBanner.js';
@@ -8,15 +9,29 @@ import { errorCopy, retryLabel } from './copy.js';
 import { useTodos } from './state/use-todos.js';
 
 export function App() {
-  const { state, load } = useTodos();
+  const { state, load, create, creating, writeError } = useTodos();
+  const messageId = useId();
   const failed = state.status === 'error';
+  // One live region: the load error wins, then the pending write error.
+  const message =
+    state.status === 'error'
+      ? errorCopy.load[state.code]
+      : writeError
+        ? errorCopy[writeError.action][writeError.code]
+        : null;
 
   return (
     <main className={styles.main}>
       <h1 className={styles.title}>Todo</h1>
-      <TodoInput />
+      <TodoInput
+        onSubmit={create}
+        disabled={creating || state.status !== 'ready'}
+        invalid={writeError?.code === 'VALIDATION_ERROR'}
+        errorId={messageId}
+      />
       <ErrorBanner
-        message={state.status === 'error' ? errorCopy.load[state.code] : null}
+        messageId={messageId}
+        message={message}
         action={failed ? { label: retryLabel, onClick: load } : undefined}
       />
       <section className={styles.list} aria-label="Todo List">

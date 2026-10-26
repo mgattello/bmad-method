@@ -1,10 +1,10 @@
-import type { Todo } from '@todo/contract';
+import { DESCRIPTION_MAX, type Todo } from '@todo/contract';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { listTodos, type ApiResult } from './api/todos-client.js';
+import { createTodo, listTodos, type ApiResult } from './api/todos-client.js';
 import { App } from './App.js';
 import itemStyles from './components/TodoItem.module.css';
-import { emptyStateCopy, errorCopy, loadingCopy, retryLabel } from './copy.js';
+import { addLabel, emptyStateCopy, errorCopy, loadingCopy, retryLabel } from './copy.js';
 
 vi.mock('./api/todos-client.js');
 
@@ -22,10 +22,16 @@ const todoB: Todo = {
   completed: false,
   createdAt: '2026-10-26T10:00:01.000Z',
 };
+const todoC: Todo = {
+  id: 'c',
+  description: 'Buy milk',
+  completed: false,
+  createdAt: '2026-10-26T10:00:02.000Z',
+};
 
-function deferred() {
-  let resolve: (value: ApiResult<Todo[]>) => void = () => {};
-  const promise = new Promise<ApiResult<Todo[]>>((res) => {
+function deferred<T = Todo[]>() {
+  let resolve: (value: ApiResult<T>) => void = () => {};
+  const promise = new Promise<ApiResult<T>>((res) => {
     resolve = res;
   });
   return { promise, resolve };
@@ -139,5 +145,184 @@ describe('App', () => {
     expect(screen.getAllByRole('status')).toHaveLength(1);
     expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.getByRole('status').textContent).toContain(errorCopy.load.NOT_FOUND);
+  });
+});
+
+describe('App create', () => {
+  beforeEach(() => {
+    vi.mocked(listTodos).mockReset();
+    vi.mocked(createTodo).mockReset();
+  });
+
+  function input() {
+    return screen.getByRole('textbox', { name: 'New todo' });
+  }
+
+  function addButton() {
+    return screen.getByRole('button', { name: addLabel });
+  }
+
+  async function submit(value: string, via: 'enter' | 'add' = 'enter') {
+    fireEvent.change(input(), { target: { value } });
+    await act(async () => {
+      if (via === 'add') fireEvent.click(addButton());
+      else fireEvent.submit(input().closest('form')!);
+    });
+  }
+
+  async function renderReady(todos: Todo[]) {
+    vi.mocked(listTodos).mockResolvedValue({ ok: true, data: todos });
+    render(<App />);
+    if (todos.length === 0) await screen.findByText(emptyStateCopy);
+    else await screen.findByRole('list', { name: 'Todos' });
+  }
+
+  it('adds the first todo from the Empty State, clears and refocuses the input', async () => {
+    vi.mocked(createTodo).mockResolvedValue({ ok: true, data: todoC });
+    await renderReady([]);
+
+    await submit('  Buy milk  ', 'add');
+
+    expect(createTodo).toHaveBeenCalledTimes(1);
+    expect(createTodo).toHaveBeenCalledWith('Buy milk');
+    const list = screen.getByRole('list', { name: 'Todos' });
+    const items = within(list).getAllByRole('listitem');
+    expect(items).toHaveLength(1);
+    expect(within(items[0]!).getByText('Buy milk')).toBeDefined();
+    expect(screen.queryByText(emptyStateCopy)).toBeNull();
+    expect(input()).toHaveProperty('value', '');
+    expect(document.activeElement).toBe(input());
+    expect(screen.getByRole('status').textContent).toBe('');
+    expect(addButton()).toHaveProperty('disabled', false);
+  });
+
+  it('puts a new todo first when the list already has items', async () => {
+    vi.mocked(createTodo).mockResolvedValue({ ok: true, data: todoC });
+    await renderReady([todoB, todoA]);
+
+    await submit('Buy milk');
+
+    const items = within(screen.getByRole('list', { name: 'Todos' })).getAllByRole('listitem');
+    expect(items.map((item) => item.textContent)).toEqual([
+      expect.stringContaining('Buy milk'),
+      expect.stringContaining('<b>x</b>'),
+      expect.stringContaining('first'),
+    ]);
+  });
+
+  it('disables Add while a create is pending and ignores a second submit', async () => {
+    const pending = deferred<Todo>();
+    vi.mocked(createTodo).mockReturnValueOnce(pending.promise);
+    await renderReady([]);
+
+    await submit('Buy milk');
+    expect(addButton()).toHaveProperty('disabled', true);
+
+    await submit('Buy milk');
+    expect(createTodo).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      pending.resolve({ ok: true, data: todoC });
+      await pending.promise;
+    });
+    expect(addButton()).toHaveProperty('disabled', false);
+    expect(
+      within(screen.getByRole('list', { name: 'Todos' })).getAllByRole('listitem'),
+    ).toHaveLength(1);
+  });
+
+  it.each(['', '   ', 'x'.repeat(DESCRIPTION_MAX + 1)])(
+    'rejects %j locally with the validation copy and no request',
+    async (raw) => {
+      await renderReady([]);
+
+      await submit(raw);
+
+      expect(createTodo).not.toHaveBeenCalled();
+      const status = screen.getByRole('status');
+      expect(status.textContent).toBe(errorCopy.create.VALIDATION_ERROR);
+      expect(input().getAttribute('aria-invalid')).toBe('true');
+      const describedBy = input().getAttribute('aria-describedby');
+      expect(describedBy).not.toBeNull();
+      expect(document.getElementById(describedBy!)?.textContent).toBe(
+        errorCopy.create.VALIDATION_ERROR,
+      );
+      expect(input()).toHaveProperty('value', raw);
+      expect(document.activeElement).toBe(input());
+      expect(screen.getByText(emptyStateCopy)).toBeDefined();
+    },
+  );
+
+  it('shows the same validation copy and attributes on a server VALIDATION_ERROR', async () => {
+    vi.mocked(createTodo).mockResolvedValue({
+      ok: false,
+      code: 'VALIDATION_ERROR',
+      message: serverMessage,
+    } as unknown as ApiResult<Todo>);
+    await renderReady([todoA]);
+
+    await submit('Buy milk');
+
+    expect(screen.getByRole('status').textContent).toBe(errorCopy.create.VALIDATION_ERROR);
+    expect(input().getAttribute('aria-invalid')).toBe('true');
+    const describedBy = input().getAttribute('aria-describedby');
+    expect(document.getElementById(describedBy!)?.textContent).toBe(
+      errorCopy.create.VALIDATION_ERROR,
+    );
+    expect(document.body.textContent).not.toContain(serverMessage);
+    expect(input()).toHaveProperty('value', 'Buy milk');
+    const items = within(screen.getByRole('list', { name: 'Todos' })).getAllByRole('listitem');
+    expect(items).toHaveLength(1);
+    expect(within(items[0]!).getByText('first')).toBeDefined();
+  });
+
+  it('keeps the text, focus and list on an INTERNAL_ERROR, with no aria-invalid', async () => {
+    vi.mocked(createTodo).mockResolvedValue({ ok: false, code: 'INTERNAL_ERROR' });
+    await renderReady([todoA]);
+
+    await submit('Buy milk', 'add');
+
+    expect(screen.getByRole('status').textContent).toBe(errorCopy.create.INTERNAL_ERROR);
+    expect(input().hasAttribute('aria-invalid')).toBe(false);
+    expect(input().hasAttribute('aria-describedby')).toBe(false);
+    expect(input()).toHaveProperty('value', 'Buy milk');
+    expect(document.activeElement).toBe(input());
+    expect(addButton()).toHaveProperty('disabled', false);
+    const items = within(screen.getByRole('list', { name: 'Todos' })).getAllByRole('listitem');
+    expect(items).toHaveLength(1);
+    expect(within(items[0]!).getByText('first')).toBeDefined();
+    expect(screen.queryByRole('button', { name: retryLabel })).toBeNull();
+  });
+
+  it('clears the message when the next submit starts', async () => {
+    vi.mocked(createTodo).mockResolvedValue({ ok: true, data: todoC });
+    await renderReady([]);
+    await submit('');
+    expect(screen.getByRole('status').textContent).toBe(errorCopy.create.VALIDATION_ERROR);
+
+    await submit('Buy milk');
+
+    expect(screen.getByRole('status').textContent).toBe('');
+    expect(input().hasAttribute('aria-invalid')).toBe(false);
+  });
+
+  it('disables Add while the list is loading', () => {
+    vi.mocked(listTodos).mockReturnValue(new Promise(() => {}));
+
+    render(<App />);
+
+    expect(addButton()).toHaveProperty('disabled', true);
+    expect(input()).toHaveProperty('disabled', false);
+  });
+
+  it('disables Add in the load Error State and keeps one live region', async () => {
+    vi.mocked(listTodos).mockResolvedValue({ ok: false, code: 'INTERNAL_ERROR' });
+
+    render(<App />);
+    await screen.findByRole('button', { name: retryLabel });
+
+    expect(addButton()).toHaveProperty('disabled', true);
+    expect(screen.getAllByRole('status')).toHaveLength(1);
+    expect(screen.getByRole('status').textContent).toContain(errorCopy.load.INTERNAL_ERROR);
   });
 });

@@ -1,18 +1,27 @@
-import { useId, useState, type FormEvent } from 'react';
+import { useId, useRef, useState, type FormEvent } from 'react';
+import { addLabel } from '../copy.js';
 import styles from './TodoInput.module.css';
 
 type Props = {
-  onSubmit?: (description: string) => void;
+  onSubmit: (value: string) => Promise<boolean>;
+  disabled?: boolean;
+  invalid?: boolean;
+  errorId?: string;
 };
 
-// Shell only: the handler is wired in Story 2.2.
-export function TodoInput({ onSubmit }: Props) {
+// Dumb form: validation and copy live in the hook; `true` from onSubmit means the field may clear.
+export function TodoInput({ onSubmit, disabled, invalid, errorId }: Props) {
   const inputId = useId();
+  const inputRef = useRef<HTMLInputElement>(null);
   const [value, setValue] = useState('');
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    onSubmit?.(value);
+    inputRef.current?.focus();
+    const cleared = await onSubmit(value);
+    if (cleared) setValue('');
+    // A click on Add moves focus to the button; disabling it would drop focus to body.
+    inputRef.current?.focus();
   }
 
   return (
@@ -22,15 +31,18 @@ export function TodoInput({ onSubmit }: Props) {
       </label>
       <div className={styles.row}>
         <input
+          ref={inputRef}
           id={inputId}
           className={styles.input}
           type="text"
           autoComplete="off"
           value={value}
+          aria-invalid={invalid || undefined}
+          aria-describedby={invalid ? errorId : undefined}
           onChange={(event) => setValue(event.target.value)}
         />
-        <button className={styles.button} type="submit">
-          Add
+        <button className={styles.button} type="submit" disabled={disabled}>
+          {addLabel}
         </button>
       </div>
     </form>

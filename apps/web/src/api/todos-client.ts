@@ -18,12 +18,32 @@ function envelopeCode(body: unknown): ErrorCode {
     : ErrorCode.INTERNAL_ERROR;
 }
 
+function isTodo(body: unknown): body is Todo {
+  return typeof body === 'object' && body !== null && 'id' in body && typeof body.id === 'string';
+}
+
 // Never throws or rejects past this boundary.
 export async function listTodos(): Promise<ApiResult<Todo[]>> {
   try {
     const res = await fetch(TODOS_PATH, { headers: { accept: 'application/json' } });
     const body: unknown = await res.json().catch(() => undefined);
     if (res.ok) return Array.isArray(body) ? { ok: true, data: body as Todo[] } : failure();
+    return { ok: false, code: envelopeCode(body) };
+  } catch {
+    return failure();
+  }
+}
+
+// The only place the web talks to POST; the caller trims first.
+export async function createTodo(description: string): Promise<ApiResult<Todo>> {
+  try {
+    const res = await fetch(TODOS_PATH, {
+      method: 'POST',
+      headers: { accept: 'application/json', 'content-type': 'application/json' },
+      body: JSON.stringify({ description }),
+    });
+    const body: unknown = await res.json().catch(() => undefined);
+    if (res.ok) return isTodo(body) ? { ok: true, data: body } : failure();
     return { ok: false, code: envelopeCode(body) };
   } catch {
     return failure();

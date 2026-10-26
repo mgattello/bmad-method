@@ -92,10 +92,15 @@ script runs with `apps/api` as its working directory, so the example creates `ap
 ## Web
 
 `npm run dev -w apps/web` serves the client on port 5173 and proxies `/api/` to
-`API_PROXY_TARGET` (default `http://localhost:3000`). The shell, the input and the list states
-render on their own; until an API is reachable at that target the list shows the Error State
-with a Retry button. Copy for every state lives in `apps/web/src/copy.ts`; the server's error
-`message` is never shown.
+`API_PROXY_TARGET` (default `http://localhost:3000`). Until an API is reachable at that target
+the list shows the Error State with a Retry button. The input adds a Todo through the API: Enter
+or the Add control sends the trimmed description to `POST /api/v1/todos` and the returned Todo
+goes to the top of the list; while a create is pending, or the list is loading or failed, Add is
+disabled. An empty or whitespace-only description, or one over `DESCRIPTION_MAX` characters, is
+rejected locally with the same message a server `VALIDATION_ERROR` shows; a failed create keeps
+the typed text and focus. Copy for every state, validation and failure message lives in
+`apps/web/src/copy.ts`; the server's error `message` is never shown. `e2e/create.spec.ts` and
+`e2e/validation.spec.ts` cover the input end to end and run under the Story 1.5 harness.
 
 ## Docker
 
