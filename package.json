@@ -19,12 +19,14 @@
     "test:int": "npm run build -w packages/contract && npm run test:int -w apps/api",
     "test:e2e": "echo \"E2E harness: configured in Story 1.5\"",
     "lint": "npm run build -w packages/contract && eslint . && prettier --check . && npm run typecheck --workspaces --if-present",
+    "dev:api": "npm run build -w packages/contract && concurrently -k -n contract,api \"npm run dev -w packages/contract\" \"npm run dev -w apps/api\"",
     "format": "prettier --write ."
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
     "@types/node": "24.19.2",
     "@vitest/coverage-v8": "5.0.5",
+    "concurrently": "10.0.6",
     "eslint": "10.13.0",
     "eslint-plugin-react-hooks": "7.1.1",
     "prettier": "3.9.10",

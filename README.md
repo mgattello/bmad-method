@@ -12,7 +12,7 @@ decisions live in the architecture spine it links to. Every story appends to
 - Node.js 24 (see `.nvmrc`) and npm 11
 - Python 3 (node-gyp's configure step for better-sqlite3; nothing is compiled, prebuilt bindings are
   used)
-- Docker with Compose v2 (added in Story 1.4)
+- Docker with Compose v2 (the graded `docker compose up` and the E2E harness)
 
 ## Layout
 
@@ -90,7 +90,46 @@ with a Retry button. Copy for every state lives in `apps/web/src/copy.ts`; the s
 
 ## Docker
 
-Added in Story 1.4.
+```sh
+docker compose up --build
+```
+
+Then open `http://localhost:8080`. The first build installs and builds every workspace inside the
+images; later builds reuse the cached dependency layer unless the lockfile or a `package.json`
+changes. Add `-d`
+to run detached, and `--wait` to block until both containers report healthy. `WEB_PORT` changes the
+host port (`WEB_PORT=8081 docker compose up`); nothing else is published. `docker compose logs api`
+shows one JSON line per request; `docker compose logs -f` follows both containers.
+
+The database lives at `/data/todos.db` on the named volume `todo-data`, so `docker compose restart`
+and `docker compose down` keep every Todo. `docker compose down -v` deletes the volume and is the
+only way to lose data.
+
+The images are the deliverable: `api` is `node:24-alpine` running `node apps/api/dist/server.js` as
+the `node` user with the workspace layout kept so `@todo/contract` resolves, and `web` is
+`nginxinc/nginx-unprivileged:1.30-alpine` serving the Vite build on 8080, proxying `/api/` to
+`http://api:3000` and answering `/healthz`. Each Dockerfile owns its `HEALTHCHECK` and builds from
+the repository root in three stages (`deps`, `build`, `runtime`); `web` starts only after `api` is
+healthy.
+
+### Dev profile
+
+```sh
+docker compose --profile dev up
+```
+
+This adds `api-dev` on `http://localhost:3000` (`tsx watch` beside the contract's `tsc --watch`,
+via the root `dev:api` script) and `web-dev` on `http://localhost:5173` (Vite, proxying `/api/`
+to `http://api-dev:3000`). Both mount the repository at `/app`, keep every `node_modules` in an
+anonymous volume and run `npm ci` inside the container on each start (seconds to a few minutes
+depending on the network); host `node_modules` are never used. Each then builds the contract once
+before its watcher starts. `web-dev` has no readiness gate on `api-dev`, so Vite's proxy logs
+`ECONNREFUSED` until `api-dev` is listening. `api-dev` writes to `/data/dev.db` on the same
+`todo-data` volume, so it never shares a file with `api`, and hands `/data` to `node` on start, so
+the dev profile is safe on a fresh volume. The built `api` and `web` services start under this
+profile too; to run only the hot-reload pair, name them:
+`docker compose --profile dev up api-dev web-dev`. Stop the dev pair with
+`docker compose --profile dev down`.
 
 ## E2E
 
