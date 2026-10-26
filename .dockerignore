@@ -9,3 +9,10 @@ e2e
 *.tsbuildinfo
 test-results
 playwright-report
+.env.*
+!.env.example
+*.log
+.DS_Store
+.claude
+CONTEXT.md
+PRD.md

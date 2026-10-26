@@ -5,7 +5,8 @@
   "type": "module",
   "description": "Todo App: npm workspaces monorepo (contract, api, web, e2e)",
   "engines": {
-    "node": ">=24"
+    "node": ">=24",
+    "npm": ">=11"
   },
   "workspaces": [
     "packages/*",
@@ -17,7 +18,7 @@
     "test": "npm run build -w packages/contract && npm run test -w packages/contract && npm run test -w apps/api && npm run test -w apps/web",
     "test:int": "npm run build -w packages/contract && npm run test:int -w apps/api",
     "test:e2e": "echo \"E2E harness: configured in Story 1.5\"",
-    "lint": "eslint . && prettier --check . && npm run build -w packages/contract && npm run typecheck --workspaces --if-present",
+    "lint": "npm run build -w packages/contract && eslint . && prettier --check . && npm run typecheck --workspaces --if-present",
     "format": "prettier --write ."
   },
   "devDependencies": {

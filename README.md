@@ -18,10 +18,13 @@ decisions live in the architecture spine it links to. Every story appends to
 package.json             npm workspaces; fan-out scripts (contract builds first)
 tsconfig.base.json       shared strict compiler base
 eslint.config.js         one ESLint flat config
-.prettierrc              one Prettier config
+.prettierrc, .prettierignore   one Prettier config
+.nvmrc                   Node major for nvm
+.gitignore, .dockerignore      build outputs and secrets kept out of git and images
 .env.example             every environment variable with its default
 packages/contract/       @todo/contract: Todo type, TypeBox schemas, paths, error codes
 apps/api/                @todo/api: Fastify API (routes arrive in Story 1.2)
+apps/api/test/           API integration specs (*.int.test.ts)
 apps/web/                @todo/web: React + Vite client (list and states arrive in Story 1.3)
 e2e/                     Playwright harness (Story 1.5)
 docs/                    architecture.md, ai-integration-log.md, qa/
@@ -29,21 +32,21 @@ docs/                    architecture.md, ai-integration-log.md, qa/
 
 `packages/contract` is the only definition of the API. Both apps import it and declare no
 `Todo` type or `/api/v1` path of their own. It must be built before either app; every root
-script does that for you.
+script except `test:e2e` does that for you.
 
 ## Commands
 
 Run from the repository root.
 
-| Command            | What it does                                                             |
-| ------------------ | ------------------------------------------------------------------------ |
-| `npm ci`           | Install every workspace from the one root `package-lock.json`            |
-| `npm run build`    | Build contract, then api, then web                                       |
-| `npm test`         | Unit tests with coverage (70% lines and branches per app) for all three  |
-| `npm run test:int` | API integration tests (`apps/api/test/*.int.test.ts`; specs land in 1.2) |
-| `npm run test:e2e` | E2E against the built images (placeholder until Story 1.5)               |
-| `npm run lint`     | ESLint and Prettier check                                                |
-| `npm run format`   | Prettier write                                                           |
+| Command            | What it does                                                                             |
+| ------------------ | ---------------------------------------------------------------------------------------- |
+| `npm ci`           | Install every workspace from the one root `package-lock.json`                            |
+| `npm run build`    | Build contract, then api, then web                                                       |
+| `npm test`         | Unit tests with coverage (70% lines and branches per app) for all three                  |
+| `npm run test:int` | API integration tests (`apps/api/test/*.int.test.ts`; specs land in 1.2)                 |
+| `npm run test:e2e` | E2E against the built images (placeholder until Story 1.5)                               |
+| `npm run lint`     | Build contract, ESLint, Prettier check, then type-check every workspace (tests included) |
+| `npm run format`   | Prettier write                                                                           |
 
 Workspace scripts can be run alone, for example `npm run dev -w apps/web`. Build the contract
 first on a fresh checkout: `npm run build -w packages/contract`.

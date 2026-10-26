@@ -4,7 +4,15 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import tseslint from 'typescript-eslint';
 
 export default defineConfig([
-  globalIgnores(['**/dist/', '**/node_modules/', '**/coverage/', '_bmad*/', '.claude/']),
+  globalIgnores([
+    '**/dist/',
+    '**/node_modules/',
+    '**/coverage/',
+    '_bmad*/',
+    '.claude/',
+    '**/test-results/',
+    '**/playwright-report/',
+  ]),
   js.configs.recommended,
   tseslint.configs.recommended,
   {

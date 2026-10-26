@@ -14,7 +14,12 @@ import {
   TodoSchema,
   UpdateTodoBodySchema,
   todoPath,
+  type CreateTodoBody,
+  type ErrorBody,
+  type HealthBody,
   type Todo,
+  type TodoList,
+  type UpdateTodoBody,
 } from './index.js';
 
 const validTodo: Todo = {
@@ -23,6 +28,12 @@ const validTodo: Todo = {
   completed: false,
   createdAt: '2026-10-26T11:42:07.512Z',
 };
+
+const list: TodoList = [validTodo];
+const createBody: CreateTodoBody = { description: 'x' };
+const patch: UpdateTodoBody = { completed: true };
+const err: ErrorBody = { code: ErrorCode.NOT_FOUND, message: 'm' };
+const health: HealthBody = { status: 'ok' };
 
 describe('TodoSchema', () => {
   it('accepts a valid Todo', () => {
@@ -48,14 +59,14 @@ describe('TodoSchema', () => {
 describe('TodoListSchema', () => {
   it('accepts an array of Todos and rejects a bad element', () => {
     expect(Value.Check(TodoListSchema, [])).toBe(true);
-    expect(Value.Check(TodoListSchema, [validTodo])).toBe(true);
+    expect(Value.Check(TodoListSchema, list)).toBe(true);
     expect(Value.Check(TodoListSchema, [{ ...validTodo, owner: 'me' }])).toBe(false);
   });
 });
 
 describe('CreateTodoBodySchema', () => {
   it('accepts { description }', () => {
-    expect(Value.Check(CreateTodoBodySchema, { description: 'x' })).toBe(true);
+    expect(Value.Check(CreateTodoBodySchema, createBody)).toBe(true);
   });
 
   it('rejects a non-string description or an extra field', () => {
@@ -73,18 +84,20 @@ describe('UpdateTodoBodySchema', () => {
 
   it('accepts either field alone or both together', () => {
     expect(Value.Check(UpdateTodoBodySchema, { description: 'y' })).toBe(true);
-    expect(Value.Check(UpdateTodoBodySchema, { completed: true })).toBe(true);
+    expect(Value.Check(UpdateTodoBodySchema, patch)).toBe(true);
     expect(Value.Check(UpdateTodoBodySchema, { description: 'y', completed: true })).toBe(true);
   });
 
   it('rejects unknown or mistyped fields', () => {
     expect(Value.Check(UpdateTodoBodySchema, { owner: 'me' })).toBe(false);
     expect(Value.Check(UpdateTodoBodySchema, { completed: 'yes' })).toBe(false);
+    expect(Value.Check(UpdateTodoBodySchema, { description: 1 })).toBe(false);
   });
 });
 
 describe('ErrorBodySchema', () => {
   it('accepts every ErrorCode with a message', () => {
+    expect(Value.Check(ErrorBodySchema, err)).toBe(true);
     for (const code of Object.values(ErrorCode)) {
       expect(Value.Check(ErrorBodySchema, { code, message: 'm' })).toBe(true);
     }
@@ -93,6 +106,7 @@ describe('ErrorBodySchema', () => {
   it('rejects a code outside ErrorCode, a missing message, or an extra field', () => {
     expect(Value.Check(ErrorBodySchema, { code: 'TEAPOT', message: 'm' })).toBe(false);
     expect(Value.Check(ErrorBodySchema, { code: ErrorCode.NOT_FOUND })).toBe(false);
+    expect(Value.Check(ErrorBodySchema, { code: ErrorCode.NOT_FOUND, message: 1 })).toBe(false);
     expect(
       Value.Check(ErrorBodySchema, { code: ErrorCode.NOT_FOUND, message: 'm', status: 404 }),
     ).toBe(false);
@@ -109,7 +123,7 @@ describe('ErrorBodySchema', () => {
 
 describe('HealthBodySchema', () => {
   it('accepts ok and degraded only', () => {
-    expect(Value.Check(HealthBodySchema, { status: 'ok' })).toBe(true);
+    expect(Value.Check(HealthBodySchema, health)).toBe(true);
     expect(Value.Check(HealthBodySchema, { status: 'degraded' })).toBe(true);
     expect(Value.Check(HealthBodySchema, { status: 'up' })).toBe(false);
     expect(Value.Check(HealthBodySchema, { status: 'ok', uptime: 1 })).toBe(false);
@@ -132,5 +146,10 @@ describe('paths', () => {
 describe('DESCRIPTION_MAX', () => {
   it('is 500', () => {
     expect(DESCRIPTION_MAX).toBe(500);
+  });
+
+  it('is not enforced by the body schemas; description is string type only', () => {
+    expect(CreateTodoBodySchema.properties.description).toEqual({ type: 'string' });
+    expect(UpdateTodoBodySchema.properties.description).toEqual({ type: 'string' });
   });
 });

@@ -51,15 +51,26 @@ story's own verification commands:
    inside `act`). Fixed by importing the module inside `act(...)`, which also avoids a "not
    wrapped in act" warning.
 
-**Decisions made while implementing.** The `test` and `test:int` root scripts build the
-contract first so a clean checkout can run `npm test` without a separate build step; `lint`
-does not, because ESLint is configured non-type-aware and needs no `dist/`. Test files are
-excluded from each `tsc` build so they are not emitted to `dist/`; a `tsconfig.test.json` per package
-and a `typecheck` script (run by the root `lint`) type-check them instead. The web `tsconfig.node.json`
-adds `types: ["node"]` alongside `vite/client` because `vite.config.ts` reads
-`process.env.API_PROXY_TARGET`. Coverage is enabled for the contract package as well as the two
-apps. `todoPath` URL-encodes its id so a malformed id cannot change the path shape. The api
-`dev` script is left for Story 1.2, which introduces `tsx`.
+**Decisions made while implementing.** Every root script that reaches an app builds the
+contract first: `test` and `test:int` so a clean checkout can run them without a separate build
+step, and `lint`, which after ESLint and Prettier runs `typecheck` in every workspace (api and web
+type-check against the contract's `dist/`). Test files are excluded from each `tsc` build so they
+are not emitted to `dist/`; contract and api type-check them through a `tsconfig.test.json`, web
+through `tsconfig.app.json` via `tsc -b`. The web `tsconfig.node.json` adds `types: ["node"]`
+alongside `vite/client` because `vite.config.ts` reads `process.env.API_PROXY_TARGET`. Coverage is
+enabled for the contract package as well as the two apps. `todoPath` URL-encodes its id so a
+malformed id cannot change the path shape. The api `dev` script is left for Story 1.2, which
+introduces `tsx`.
+
+**Review rounds.** Round 1 (build review) raised 18 findings, 11 patched. The main ones: the
+README told developers to copy a `.env` file that nothing loads; `document.getElementById('root')
+as HTMLElement` crashed inside `createRoot` when `#root` was missing; `??` kept an empty
+`API_PROXY_TARGET` so the proxy threw per request; the `/api` proxy key prefix-matched paths such
+as `/apiary.png`; and the contract's type exports were pinned by no type-check because test files
+were excluded from `tsc`. Round 2 (code review) raised 21 findings, 13 patched, mainly the
+remaining type exports still unpinned by any annotation, stale log text, drift between the ignore
+files and the lint config, and test setup gaps (no Testing Library cleanup, api integration folder
+not type-checked).
 
 **Limitations.** The web placeholder shows the list endpoint path on
 screen so the smoke test exercises the contract import; Story 1.3 replaces that shell. No

@@ -75,6 +75,31 @@ context:
 - Given `package.json` files, when compared to the spine's Stack table, then every pinned version matches or the deviation is logged in `docs/ai-integration-log.md`.
 - Given the repo root, then `tsconfig.base.json`, `.env.example`, `.dockerignore`, `.nvmrc`, `README.md`, `docs/architecture.md` and `docs/ai-integration-log.md` exist with the content above.
 
+### Review Findings
+
+Code review of branch `epic-1/story-1-1` vs `main` (2026-10-26), four layers: blind-hunter, edge-case-hunter, verification-gap, acceptance-auditor. 21 findings, 13 entries after grouping.
+
+- [x] [Review][Patch] Pin the five remaining contract type exports (`TodoList`, `CreateTodoBody`, `UpdateTodoBody`, `ErrorBody`, `HealthBody`) with typed fixtures in the contract test so `typecheck` fails if one is removed [packages/contract/src/contract.test.ts:17] (verification-gap, medium)
+- [x] [Review][Patch] AI log Decisions paragraph is stale: says `lint` does not build the contract and that every package has `tsconfig.test.json`; web has none and `lint` now builds the contract [docs/ai-integration-log.md:56] (blind-hunter+acceptance-auditor, medium)
+- [x] [Review][Patch] AI log omits the review round (18 findings, 11 patched) that produced most of this story's "what the AI missed" [docs/ai-integration-log.md] (blind-hunter, medium)
+- [x] [Review][Patch] `.dockerignore` misses `.env.*` (with `!.env.example`), `*.log`, `.DS_Store`, `.claude`, `CONTEXT.md`, `PRD.md`; local env files would enter the build context in Story 1.4 [.dockerignore:8] (edge-case-hunter+blind-hunter, medium)
+- [x] [Review][Patch] ESLint `globalIgnores` lacks `test-results/` and `playwright-report/`; first local E2E run after 1.5 breaks `npm run lint` [eslint.config.js:7] (edge-case-hunter+blind-hunter, low)
+- [x] [Review][Patch] Web Vitest has no `setupFiles` calling `afterEach(cleanup)`; Testing Library auto-cleanup never registers, so 1.3 component tests will leak trees [apps/web/vitest.config.ts] (edge-case-hunter+blind-hunter, low)
+- [x] [Review][Patch] `apps/api/tsconfig.test.json` includes only `src/**/*.test.ts`; 1.2 integration specs under `test/` would never be type-checked [apps/api/tsconfig.test.json] (edge-case-hunter, low)
+- [x] [Review][Patch] Contract tests do not pin AD-6: no assertion that `description` is plain `{ type: 'string' }` on Create/Update schemas, that Update rejects a non-string `description`, or that ErrorBody rejects a non-string `message` [packages/contract/src/contract.test.ts] (blind-hunter, low)
+- [x] [Review][Patch] Root `lint` builds the contract third, not first; frozen constraint says contract builds first in every script [package.json lint script] (acceptance-auditor, low)
+- [x] [Review][Patch] README: `lint` row omits contract build and typecheck; layout tree omits `.nvmrc`, `.dockerignore`, `.gitignore`, `.prettierignore`, `apps/api/test/`; "every root script builds the contract" overstates `test:e2e` [README.md] (blind-hunter+acceptance-auditor, low)
+- [x] [Review][Patch] README requires npm 11 but `engines` lists only node; add `"npm": ">=11"` [package.json engines] (blind-hunter, low)
+- [x] [Review][Patch] `.env.example` labels `NODE_ENV=production` as a default though it is a compose value; `docs/qa/README.md` omits `walkthrough.md` that epics.md places there [.env.example:7, docs/qa/README.md] (blind-hunter, low)
+- [x] [Review][Patch] `apps/web/tsconfig.app.json` is a subset of the create-vite `react-ts` settings the spine names (missing `moduleDetection`, `allowImportingTsExtensions`, `useDefineForClassFields`, `noUnusedLocals`, `noUnusedParameters`, `noFallthroughCasesInSwitch`, `noUncheckedSideEffectImports`) [apps/web/tsconfig.app.json] (acceptance-auditor, low)
+
+**Rejected**
+- `todoPath('')` yields a trailing slash (edge-case-hunter): low; ids are server-assigned, no caller passes an empty id, guard adds a branch.
+- `API_PROXY_TARGET` without a scheme breaks the proxy at runtime (edge-case-hunter): low; dev-only misconfiguration that fails loudly per request; `new URL` guard adds complexity.
+- `engines` advisory, add `.npmrc engine-strict` (edge-case-hunter): low; unlikely in practice, adds config.
+- `App` exported from `main.tsx` and renders a contract path (acceptance-auditor): low; deliberate placeholder kept in review round 1, Story 1.3 replaces the shell.
+- Spec Implementation Notes overstate "removing a contract type export fails lint" (verification-gap other): fix is an edit to the spec under review; the code gap itself is entry 1.
+
 ## Implementation Notes
 
 - Implemented by a dispatch subagent from the spec alone; verified by the dispatcher against the diff from baseline `51d7489` and a fresh run of `npm run build`, `npm run lint`, `npm test`, `npm run test:int`, `npm run test:e2e` and the `todoPath` import check. All green; coverage 100% lines and branches in contract, api and web.
@@ -85,6 +110,7 @@ context:
 - `todoPath` URL-encodes its id so a malformed id cannot alter the path shape.
 - No api `dev` script yet; it needs `tsx`, which Story 1.2 introduces.
 - Docker is not installed on this machine; not needed for this story.
+- Code review (round 2, branch vs main): 21 findings, 13 patched (five remaining type exports pinned, AI log corrected and review rounds recorded, ignore-file drift, Testing Library cleanup, api test typecheck include, lint order, README, engines.npm, env labels, create-vite tsconfig flags), 5 rejected, 0 deferred. Full verification rerun green; removing any of the six contract type exports now fails `npm run lint`.
 - Review round 1: 18 findings triaged, 11 patched by the implementer (test type-checking via `tsconfig.test.json` + `typecheck` in root `lint`, README env guidance, Vite proxy key and fallback, `#root` guard, ignore files, docs stubs and notes, test rename), 6 rejected, 1 deferred. Full verification rerun green; removing a contract type export now fails `npm run lint`.
 
 ## Spec Change Log
