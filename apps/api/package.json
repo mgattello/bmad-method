@@ -1,0 +1,16 @@
+{
+  "name": "@todo/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Todo HTTP API (Fastify, SQLite); routes arrive in Story 1.2",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc -p tsconfig.test.json",
+    "test": "vitest run --coverage",
+    "test:int": "vitest run --config vitest.int.config.ts --passWithNoTests"
+  },
+  "dependencies": {
+    "@todo/contract": "*"
+  }
+}

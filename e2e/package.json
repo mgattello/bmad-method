@@ -1,0 +1,7 @@
+{
+  "name": "@todo/e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Playwright E2E harness against the built images; owned by Story 1.5"
+}

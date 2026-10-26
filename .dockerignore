@@ -1,0 +1,11 @@
+**/node_modules
+**/dist
+**/coverage
+_bmad*
+docs
+e2e
+.git
+.env
+*.tsbuildinfo
+test-results
+playwright-report

@@ -1,0 +1,26 @@
+{
+  "name": "@todo/contract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The only definition of the Todo API: types, TypeBox schemas, paths, error codes",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc -p tsconfig.test.json",
+    "dev": "tsc --watch",
+    "test": "vitest run --coverage"
+  },
+  "dependencies": {
+    "typebox": "1.4.3"
+  }
+}

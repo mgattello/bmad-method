@@ -1,0 +1,9 @@
+dist
+node_modules
+coverage
+_bmad*
+.claude
+package-lock.json
+CONTEXT.md
+PRD.md
+docs/architecture.md
