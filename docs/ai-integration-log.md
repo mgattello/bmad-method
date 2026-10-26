@@ -254,3 +254,77 @@ tree, `npm run dev -w apps/web` shows the Error State with Retry until Story 1.2
 `API_PROXY_TARGET` points at a running API. The unmount-mid-load test cannot fail if the sequence
 guard's cleanup is removed, because React 19 makes `setState` on an unmounted component a silent
 no-op, so it documents the behaviour rather than guarding it. Docker was not needed.
+
+## Story 2.1: Create a Todo through the API
+
+**Date:** 2026-10-26
+
+**Agent usage.** Claude Code (model Fable 5.1) ran as a BMAD build dispatch agent in a git
+worktree, with the story spec as its only brief. It read the spec's `context:` files (the epic 2
+context and the architecture spine), then the whole of `apps/api`, the contract package and the
+docs the spec names, and extended the Story 1.2 layers in place: `ValidationError` in
+`service/errors.ts`, `insert` on the `TodoRepository` port with a prepared `insertStmt` in
+`SqliteTodoRepository` and a push in `InMemoryTodoRepository`, `TodoService.create`, the POST
+route and the `ValidationError` branch in the error handler. It extended the three unit suites and
+the todos integration spec, updated the two READMEs and this log, and ran every verification
+command itself (`npm run build`, `npm run lint`, `npm test`, `npm run test:int`, the spec's greps
+and diff check, and the `tsx` smoke run with `curl`).
+
+**Prompts.** One prompt: implement the story spec, treating it as the sole source of truth, load
+its context files first, and report what changed, how it was verified and what is left.
+
+**MCPs and tools.** No MCP servers were used. The agent worked through the shell: `python3`
+heredocs for in-place edits, `prettier`, `tsc`, `vitest`, `curl` and `git`. No probe install was
+needed; everything the story relies on (Fastify's `instanceof` errors reaching `setErrorHandler`,
+better-sqlite3's synchronous `run()`, Vitest's `vi.setSystemTime` and `vi.spyOn(crypto,
+'randomUUID')`) was already in the installed stack.
+
+**What the AI missed, and debugging.** Both tests and the build passed on the first run; two
+things failed in the verification pass:
+
+1. `npm run lint` failed in the api `typecheck`: the schema-rejection test in `app.test.ts` typed
+   its payload table as `unknown[]`, which Fastify's `inject` does not accept as a payload, and
+   the compiler then lost the `Response` type on the awaited result. The unit run had passed
+   because Vitest strips types. Fixed by typing the table as `Record<string, unknown>[]`. The
+   first lint run also hid the failure behind a `tail` filter; the second run was read in full.
+2. The first smoke script died before starting the server because zsh's `nomatch` turned
+   `rm -f .../todos.db*` into an error when no file matched. Re-run with `rm -rf` on the scratch
+   directory.
+
+**Decisions made while implementing.** The rule text is one constant in `todo-service.ts`,
+built from `DESCRIPTION_MAX`, so the message and the limit cannot drift. The `ValidationError`
+branch sits after the 404 branch and before the generic 4xx mapping; it logs at `debug` like the
+other 4xx branches and emits the error's own message, which is the only place a non-fixed string
+reaches an error body. `insertStmt` is prepared directly, like `pingStmt`, because `scoped()`
+exists to append a read filter and an INSERT has nothing to filter; the owner column will be bound
+on that one statement. `InMemoryTodoRepository.insert` pushes a shallow copy so a caller mutating
+its Todo after the call cannot change what the double returns. Unit tests use fake timers for
+`vi.setSystemTime` and pin both a `.000Z` and a non-zero-millisecond `createdAt`. The integration
+POST describe runs in the same file as GET (one spec per endpoint path) and reuses the seeded
+rows from the GET describe for the ordering case; each case counts rows through a direct
+`openDatabase` connection to prove that rejected bodies insert nothing, and the durability case
+reads the raw row to see `completed` stored as `0`. The closed-store 500 case captures the pino
+stream to assert one error line. `docs/architecture.md` section 3 already described POST and the
+`VALIDATION_ERROR` cases correctly, so it was left unchanged.
+
+**Review rounds.** Round 1 (build review, three parallel layers: blind hunter, edge-case hunter,
+verification gap) raised 16 findings, triaged into 15 rows: 11 patched, 5 rejected, 0 deferred.
+Patched: the rejection branch of the error handler logged at `debug` but no test observed it, so
+the one-line-per-request guarantee was unpinned for rejected POSTs; the POST ordering case
+asserted on rows seeded by the GET describe; the integration helper leaked a default repository
+in the closed-store case; a JSON array body and a form-encoded body were untested; the `scoped()`
+comment no longer matched the insert statement; the length unit (UTF-16 code units) was unstated;
+the README hard-coded the 500 limit and the test README had one unreadable table cell; the
+too-long unit case did not pin `statusCode`; and this entry lacked test counts. Rejected: a
+duplicate-id contract on the in-memory double (ids only come from `crypto.randomUUID()`),
+zero-width-only descriptions and lone surrogates (rare, and the fix adds branches the spine does
+not ask for), and a wall clock earlier than the seeded rows. After the round: api unit suite 36
+tests at 100% lines and branches, integration suite 22 tests, lint clean.
+
+**Limitations.** The spec's "no SQL outside the places the spine assigns them" check reads the
+two test files as exceptions: the Story 1.2 seed helper and the new direct reads use raw
+better-sqlite3 statements on purpose, so the specs do not depend on the repository under test to
+check its own writes. The `ValidationError` branch and the generic 4xx mapping both answer 400,
+so a regression that drops the branch would only change the message, which the app and
+integration suites pin. Docker was not needed. Before this review round the api unit suite had 35
+tests at 100% lines and 100% branches, and the integration suite 20 tests.

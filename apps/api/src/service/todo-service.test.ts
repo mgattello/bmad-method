@@ -1,9 +1,15 @@
-import type { Todo } from '@todo/contract';
-import { describe, expect, it, vi } from 'vitest';
+import { DESCRIPTION_MAX, type Todo } from '@todo/contract';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { InMemoryTodoRepository } from '../repository/in-memory-todo-repository.js';
 import type { TodoRepository } from '../repository/todo-repository.js';
+import { ValidationError } from './errors.js';
 import { TodoService } from './todo-service.js';
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 const todo = (id: string, createdAt: string): Todo => ({
   id,
@@ -29,6 +35,7 @@ describe('TodoService.list', () => {
   it('sorts an unordered repository result by createdAt desc and keeps repository order on ties', () => {
     const unordered: TodoRepository = {
       list: () => [todo('a', T1), todo('b', T2), todo('c', T1), todo('d', T2)],
+      insert: () => {},
       ping: () => {},
       close: () => {},
     };
@@ -38,7 +45,12 @@ describe('TodoService.list', () => {
 
   it('returns an empty list for an empty repository and never mutates the repository result', () => {
     const rows = [todo('a', T1), todo('b', T2)];
-    const repository: TodoRepository = { list: () => rows, ping: () => {}, close: () => {} };
+    const repository: TodoRepository = {
+      list: () => rows,
+      insert: () => {},
+      ping: () => {},
+      close: () => {},
+    };
     expect(new TodoService(new InMemoryTodoRepository()).list()).toEqual([]);
     expect(new TodoService(repository).list().map((t) => t.id)).toEqual(['b', 'a']);
     expect(rows.map((t) => t.id)).toEqual(['a', 'b']);
@@ -48,18 +60,117 @@ describe('TodoService.list', () => {
 describe('TodoService.ping', () => {
   it('delegates to the repository and lets its failure propagate', () => {
     const ping = vi.fn();
-    const ok: TodoRepository = { list: () => [], ping, close: () => {} };
+    const ok: TodoRepository = { list: () => [], insert: () => {}, ping, close: () => {} };
     new TodoService(ok).ping();
     expect(ping).toHaveBeenCalledTimes(1);
 
     const broken: TodoRepository = {
       list: () => [],
+      insert: () => {},
       ping: () => {
         throw new Error('store down');
       },
       close: () => {},
     };
     expect(() => new TodoService(broken).ping()).toThrow('store down');
+  });
+});
+
+describe('TodoService.create', () => {
+  const RULE = `description must be 1 to ${DESCRIPTION_MAX} characters after trimming`;
+
+  function stub(insert: TodoRepository['insert'] = () => {}): TodoRepository {
+    return { list: () => [], insert, ping: () => {}, close: () => {} };
+  }
+
+  it('trims, assigns id and createdAt, stores the trimmed value and returns it (golden)', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-26T12:00:00.123Z'));
+    vi.spyOn(crypto, 'randomUUID').mockReturnValue('11111111-2222-4333-8444-555555555555');
+    const repository = new InMemoryTodoRepository();
+    const service = new TodoService(repository);
+    const created = service.create('  Buy milk ');
+    expect(created).toEqual({
+      id: '11111111-2222-4333-8444-555555555555',
+      description: 'Buy milk',
+      completed: false,
+      createdAt: '2026-10-26T12:00:00.123Z',
+    });
+    expect(repository.list()).toEqual([created]);
+    expect(Object.keys(created)).toEqual(['id', 'description', 'completed', 'createdAt']);
+  });
+
+  it('formats createdAt with millisecond precision, including .000Z', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-26T12:00:00.000Z'));
+    expect(new TodoService(stub()).create('x').createdAt).toBe('2026-10-26T12:00:00.000Z');
+    vi.setSystemTime(new Date('2026-10-26T23:59:59.999Z'));
+    expect(new TodoService(stub()).create('x').createdAt).toBe('2026-10-26T23:59:59.999Z');
+  });
+
+  it('uses a fresh UUID v4 per create by default', () => {
+    const service = new TodoService(stub());
+    const a = service.create('a');
+    const b = service.create('b');
+    const v4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+    expect(a.id).toMatch(v4);
+    expect(b.id).toMatch(v4);
+    expect(a.id).not.toBe(b.id);
+  });
+
+  it('accepts exactly DESCRIPTION_MAX characters and 1 character after trim', () => {
+    const service = new TodoService(stub());
+    const max = 'a'.repeat(DESCRIPTION_MAX);
+    expect(service.create(max).description).toBe(max);
+    expect(service.create(`  ${max}  `).description).toBe(max);
+    expect(service.create(' b ').description).toBe('b');
+  });
+
+  it('rejects DESCRIPTION_MAX + 1 characters after trim without inserting', () => {
+    const insert = vi.fn();
+    const service = new TodoService(stub(insert));
+    let caught: unknown;
+    try {
+      service.create('a'.repeat(DESCRIPTION_MAX + 1));
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(ValidationError);
+    expect(caught).toMatchObject({ statusCode: 400, name: 'ValidationError', message: RULE });
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it.each(['', '   ', '\t\n'])('rejects %j as empty after trim without inserting', (input) => {
+    const insert = vi.fn();
+    const service = new TodoService(stub(insert));
+    let caught: unknown;
+    try {
+      service.create(input);
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(ValidationError);
+    expect(caught).toMatchObject({ statusCode: 400, name: 'ValidationError', message: RULE });
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it('lists the second of two creates first', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-26T12:00:00.000Z'));
+    const service = new TodoService(new InMemoryTodoRepository());
+    const first = service.create('first');
+    vi.setSystemTime(new Date('2026-10-26T12:00:00.001Z'));
+    const second = service.create('second');
+    expect(service.list()).toEqual([second, first]);
+  });
+
+  it('lets a repository insert failure propagate', () => {
+    const service = new TodoService(
+      stub(() => {
+        throw new Error('The database connection is not open');
+      }),
+    );
+    expect(() => service.create('x')).toThrow('The database connection is not open');
   });
 });
 
@@ -71,5 +182,14 @@ describe('InMemoryTodoRepository', () => {
     expect(repository.list()).toHaveLength(1);
     expect(() => repository.ping()).not.toThrow();
     expect(() => repository.close()).not.toThrow();
+  });
+
+  it('insert stores a copy and later insertions win createdAt ties', () => {
+    const repository = new InMemoryTodoRepository([todo('a', T1)]);
+    const b = todo('b', T1);
+    repository.insert(b);
+    b.description = 'mutated';
+    expect(repository.list().map((t) => t.id)).toEqual(['b', 'a']);
+    expect(repository.list()[0]?.description).toBe('b');
   });
 });

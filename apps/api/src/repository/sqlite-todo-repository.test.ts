@@ -67,12 +67,47 @@ describe('SqliteTodoRepository', () => {
     repository.close();
   });
 
+  it('inserts rows newest first and writes completed as 0/1', () => {
+    const path = join(dir, 'insert.db');
+    const repository = new SqliteTodoRepository(path);
+    const first = {
+      id: 'i1',
+      description: 'first',
+      completed: false,
+      createdAt: '2026-10-26T12:00:00.000Z',
+    };
+    const second = {
+      id: 'i2',
+      description: 'second',
+      completed: true,
+      createdAt: '2026-10-26T12:00:00.001Z',
+    };
+    repository.insert(first);
+    repository.insert(second);
+    expect(repository.list()).toEqual([second, first]);
+
+    const raw = new Database(path, { readonly: true });
+    const rows = raw
+      .prepare<[], { id: string; completed: number }>('SELECT id, completed FROM todos ORDER BY id')
+      .all();
+    raw.close();
+    expect(rows).toEqual([
+      { id: 'i1', completed: 0 },
+      { id: 'i2', completed: 1 },
+    ]);
+    expect(() => repository.insert(first)).toThrow(/UNIQUE/);
+    repository.close();
+  });
+
   it('pings an open store, throws after close, and closes idempotently', () => {
     const repository = new SqliteTodoRepository(join(dir, 'ping.db'));
     expect(() => repository.ping()).not.toThrow();
     repository.close();
     expect(() => repository.ping()).toThrow('The database connection is not open');
     expect(() => repository.list()).toThrow('The database connection is not open');
+    expect(() =>
+      repository.insert({ id: 'x', description: 'x', completed: false, createdAt: 't' }),
+    ).toThrow('The database connection is not open');
     expect(() => repository.close()).not.toThrow();
   });
 });

@@ -17,6 +17,10 @@ export class InMemoryTodoRepository implements TodoRepository {
       .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
   }
 
+  insert(todo: Todo): void {
+    this.todos.push({ ...todo });
+  }
+
   ping(): void {}
 
   close(): void {}

@@ -38,6 +38,7 @@ function toTodo(row: TodoRow): Todo {
 export class SqliteTodoRepository implements TodoRepository {
   private readonly db: Database.Database;
   private readonly listStmt: Database.Statement<[], TodoRow>;
+  private readonly insertStmt: Database.Statement<[string, string, 0 | 1, string], unknown>;
   private readonly pingStmt: Database.Statement<[], unknown>;
 
   constructor(path: string) {
@@ -46,16 +47,25 @@ export class SqliteTodoRepository implements TodoRepository {
       this.scoped('SELECT id, description, completed, created_at FROM todos') +
         ' ORDER BY created_at DESC, rowid DESC',
     );
+    // Owner becomes a bound column here when it arrives (AD-10).
+    this.insertStmt = this.db.prepare<[string, string, 0 | 1, string], unknown>(
+      'INSERT INTO todos (id, description, completed, created_at) VALUES (?, ?, ?, ?)',
+    );
     this.pingStmt = this.db.prepare<[], unknown>('SELECT 1');
   }
 
-  // Every todos query passes through here; the multi-user seam (AD-10).
+  // Every todos read passes through here (AD-10); writes bind the owner as a column on their statement.
   private scoped(sql: string): string {
     return sql; // later: append a WHERE owner_id = ? clause
   }
 
   list(): Todo[] {
     return this.listStmt.all().map(toTodo);
+  }
+
+  // run() is synchronous and synchronous=FULL, so the row is on disk when this returns (AD-5).
+  insert(todo: Todo): void {
+    this.insertStmt.run(todo.id, todo.description, todo.completed ? 1 : 0, todo.createdAt);
   }
 
   ping(): void {

@@ -5,6 +5,7 @@ import Fastify, { LogController, type FastifyServerOptions } from 'fastify';
 import type { TodoRepository } from './repository/todo-repository.js';
 import { healthRoutes } from './routes/health.js';
 import { todoRoutes } from './routes/todos.js';
+import { ValidationError } from './service/errors.js';
 import { TodoService } from './service/todo-service.js';
 
 export type AppDeps = {
@@ -54,6 +55,11 @@ export function buildApp({ repository, logger = false }: AppDeps) {
     if (status === 404) {
       request.log.debug({ err: error }, 'not found');
       return reply.code(404).send(NOT_FOUND);
+    }
+    // Our own rule text may pass through; library text never does.
+    if (error instanceof ValidationError) {
+      request.log.debug({ err: error }, 'rejected by rule');
+      return reply.code(400).send({ code: ErrorCode.VALIDATION_ERROR, message: error.message });
     }
     if (status >= 400 && status < 500) {
       request.log.debug({ err: error }, 'rejected request');

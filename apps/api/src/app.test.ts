@@ -1,6 +1,13 @@
 import { Writable } from 'node:stream';
 
-import { API_PREFIX, ErrorCode, HEALTH_PATH, TODOS_PATH, type Todo } from '@todo/contract';
+import {
+  API_PREFIX,
+  DESCRIPTION_MAX,
+  ErrorCode,
+  HEALTH_PATH,
+  TODOS_PATH,
+  type Todo,
+} from '@todo/contract';
 import Type from 'typebox';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -45,6 +52,9 @@ const broken: TodoRepository = {
   list: () => {
     throw new Error('The database connection is not open');
   },
+  insert: () => {
+    throw new Error('The database connection is not open');
+  },
   ping: () => {
     throw new Error('The database connection is not open');
   },
@@ -69,6 +79,76 @@ describe('GET todos', () => {
     const res = await app(new InMemoryTodoRepository()).inject({ method: 'GET', url: TODOS_PATH });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual([]);
+  });
+});
+
+describe('POST todos', () => {
+  const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+  const ISO_MS = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
+  it('answers 201 with the created Todo, trimmed, as JSON with exactly the contract fields', async () => {
+    const repository = new InMemoryTodoRepository(seed);
+    const res = await app(repository).inject({
+      method: 'POST',
+      url: TODOS_PATH,
+      payload: { description: '  Buy milk  ' },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.headers['content-type']).toMatch(/application\/json/);
+    const body = res.json<Todo>();
+    expect(Object.keys(body)).toEqual(['id', 'description', 'completed', 'createdAt']);
+    expect(body).toMatchObject({ description: 'Buy milk', completed: false });
+    expect(body.id).toMatch(UUID_V4);
+    expect(body.createdAt).toMatch(ISO_MS);
+    expect(repository.list()[0]).toEqual(body);
+  });
+
+  it('answers a service rejection with 400 VALIDATION_ERROR carrying the rule text', async () => {
+    const instance = app(new InMemoryTodoRepository());
+    for (const description of ['', '   ', '\t\n', 'a'.repeat(DESCRIPTION_MAX + 1)]) {
+      const res = await instance.inject({
+        method: 'POST',
+        url: TODOS_PATH,
+        payload: { description },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json()).toEqual({
+        code: ErrorCode.VALIDATION_ERROR,
+        message: `description must be 1 to ${DESCRIPTION_MAX} characters after trimming`,
+      });
+    }
+    const list = await instance.inject({ method: 'GET', url: TODOS_PATH });
+    expect(list.json()).toEqual([]);
+  });
+
+  it('answers a schema rejection with 400 VALIDATION_ERROR and the generic message', async () => {
+    const instance = app(new InMemoryTodoRepository());
+    const payloads: Record<string, unknown>[] = [
+      { description: 42 },
+      { description: null },
+      {},
+      { description: 'x', completed: true },
+    ];
+    for (const payload of payloads) {
+      const res = await instance.inject({ method: 'POST', url: TODOS_PATH, payload });
+      expect(res.statusCode).toBe(400);
+      expect(res.json()).toEqual({ code: ErrorCode.VALIDATION_ERROR, message: 'Invalid request' });
+    }
+    const list = await instance.inject({ method: 'GET', url: TODOS_PATH });
+    expect(list.json()).toEqual([]);
+  });
+
+  it('answers a repository failure with 500 INTERNAL_ERROR and one error log line', async () => {
+    const { instance, lines } = withLogCapture(broken);
+    const res = await instance.inject({
+      method: 'POST',
+      url: TODOS_PATH,
+      payload: { description: 'Buy milk' },
+    });
+    expect(res.statusCode).toBe(500);
+    expect(res.json()).toEqual({ code: ErrorCode.INTERNAL_ERROR, message: 'Unexpected error' });
+    expect(res.body).not.toMatch(/database|stack|at /);
+    expect(lines.filter((line) => line.level === 50)).toHaveLength(1);
   });
 });
 
@@ -180,6 +260,22 @@ describe('request log', () => {
     });
   });
 
+  it('emits exactly one info line for a rule rejection and for a schema rejection', async () => {
+    const { instance, lines } = withLogCapture(new InMemoryTodoRepository());
+    for (const payload of [{ description: '' }, { description: 42 }]) {
+      lines.length = 0;
+      const res = await instance.inject({ method: 'POST', url: TODOS_PATH, payload });
+      expect(res.statusCode).toBe(400);
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toMatchObject({
+        level: 30,
+        method: 'POST',
+        url: TODOS_PATH,
+        statusCode: 400,
+      });
+    }
+  });
+
   it('writes nothing when the logger is off', async () => {
     const write = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     const res = await app().inject({ method: 'GET', url: TODOS_PATH });
@@ -191,7 +287,7 @@ describe('request log', () => {
 describe('lifecycle', () => {
   it('closes the repository when the app closes', async () => {
     const close = vi.fn();
-    const repository: TodoRepository = { list: () => [], ping: () => {}, close };
+    const repository: TodoRepository = { list: () => [], insert: () => {}, ping: () => {}, close };
     const instance = buildApp({ repository });
     await instance.ready();
     expect(close).not.toHaveBeenCalled();

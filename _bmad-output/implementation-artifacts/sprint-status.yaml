@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 10-26-2026 15:02
-last_updated: 10-26-2026 16:33
+last_updated: 10-26-2026 20:03
 project: bmad-method
 project_key: NOKEY
 tracking_system: file-system
@@ -43,8 +43,8 @@ development_status:
   1-5-e2e-harness-proves-the-empty-and-failed-load-journeys-agains: backlog
   epic-1-retrospective: optional
 
-  epic-2: backlog
-  2-1-create-a-todo-through-the-api: backlog
+  epic-2: in-progress
+  2-1-create-a-todo-through-the-api: review
   2-2-add-a-todo-from-the-input: backlog
   2-3-tick-and-untick-a-todo: backlog
   2-4-delete-a-todo-and-publish-the-api-contract: backlog

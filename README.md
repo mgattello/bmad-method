@@ -41,15 +41,15 @@ script except `test:e2e` does that for you.
 
 Run from the repository root.
 
-| Command            | What it does                                                                             |
-| ------------------ | ---------------------------------------------------------------------------------------- |
-| `npm ci`           | Install every workspace from the one root `package-lock.json`                            |
-| `npm run build`    | Build contract, then api, then web                                                       |
-| `npm test`         | Unit tests with coverage (70% lines and branches per app) for all three                  |
-| `npm run test:int` | API integration tests (`apps/api/test/*.int.test.ts`): todos, health, error envelope     |
-| `npm run test:e2e` | E2E against the built images (placeholder until Story 1.5)                               |
-| `npm run lint`     | Build contract, ESLint, Prettier check, then type-check every workspace (tests included) |
-| `npm run format`   | Prettier write                                                                           |
+| Command            | What it does                                                                              |
+| ------------------ | ----------------------------------------------------------------------------------------- |
+| `npm ci`           | Install every workspace from the one root `package-lock.json`                             |
+| `npm run build`    | Build contract, then api, then web                                                        |
+| `npm test`         | Unit tests with coverage (70% lines and branches per app) for all three                   |
+| `npm run test:int` | API integration tests (`apps/api/test/*.int.test.ts`): todos GET and POST, health, errors |
+| `npm run test:e2e` | E2E against the built images (placeholder until Story 1.5)                                |
+| `npm run lint`     | Build contract, ESLint, Prettier check, then type-check every workspace (tests included)  |
+| `npm run format`   | Prettier write                                                                            |
 
 Workspace scripts can be run alone, for example `npm run dev -w apps/web`. Build the contract
 first on a fresh checkout: `npm run build -w packages/contract`.
@@ -64,10 +64,19 @@ DB_PATH=./todos.db npm run dev -w apps/api
 The API listens on `http://localhost:3000` (`HOST` and `PORT` override that), creates the SQLite
 file at `DB_PATH` on first start, and reloads on source changes (`tsx watch`). Try
 `curl localhost:3000/api/v1/todos` (a JSON array, newest first) and
-`curl localhost:3000/api/v1/health` (`{"status":"ok"}`). Every request logs one JSON line with
-`method`, `url`, `statusCode` and `responseTime`. The workspace script runs with `apps/api` as its
-working directory, so the example creates `apps/api/todos.db`; `*.db`, `*.db-wal` and `*.db-shm`
-are ignored by git and by the Docker build context.
+`curl localhost:3000/api/v1/health` (`{"status":"ok"}`). To create a Todo:
+
+```sh
+curl -X POST localhost:3000/api/v1/todos -H 'content-type: application/json' -d '{"description":"Buy milk"}'
+```
+
+That answers `201` with the Todo (server-assigned `id` and `createdAt`, description trimmed), and
+the next `GET` lists it first. An empty description, or one over `DESCRIPTION_MAX` characters (500
+today) after trimming, answers `400 { "code": "VALIDATION_ERROR", "message": "..." }` and stores
+nothing; so do a wrong type, an unknown field, malformed JSON and a non-JSON content type. Every
+request logs one JSON line with `method`, `url`, `statusCode` and `responseTime`. The workspace
+script runs with `apps/api` as its working directory, so the example creates `apps/api/todos.db`;
+`*.db`, `*.db-wal` and `*.db-shm` are ignored by git and by the Docker build context.
 
 ## Configuration
 
