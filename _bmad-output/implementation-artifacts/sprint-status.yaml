@@ -45,7 +45,7 @@ development_status:
 
   epic-2: in-progress
   2-1-create-a-todo-through-the-api: done
-  2-2-add-a-todo-from-the-input: review
+  2-2-add-a-todo-from-the-input: done
   2-3-tick-and-untick-a-todo: backlog
   2-4-delete-a-todo-and-publish-the-api-contract: backlog
   2-5-keyboard-screen-reader-and-small-screen-fit: backlog
