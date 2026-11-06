@@ -29,5 +29,5 @@ WEB_PORT=8081 docker compose -p todo-e2e down -v
 
 The contract must be built first (`npm run build -w packages/contract`) and Chromium installed
 once (`npx playwright install chromium`). `stack.spec.ts` restarts the containers in its last
-test, so run it last or alone. Its row survives the run (`DELETE /api/v1/todos/:id` answers 404
-until Story 2.4 ships it), so `down -v` and `up` again before each rerun against the same stack.
+test, so run it last or alone. Every spec purges the store through `DELETE /api/v1/todos/:id`
+before each test, so reruns against the same stack are safe.

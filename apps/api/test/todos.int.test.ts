@@ -464,3 +464,70 @@ describe(`PATCH ${TODOS_PATH}/:id`, () => {
     expect(lines.filter((line) => line.level === 50)).toHaveLength(1);
   });
 });
+
+describe(`DELETE ${TODOS_PATH}/:id`, () => {
+  async function create(app: ReturnType<typeof buildApp>, description: string): Promise<Todo> {
+    const res = await app.inject({ method: 'POST', url: TODOS_PATH, payload: { description } });
+    expect(res.statusCode).toBe(201);
+    return res.json<Todo>();
+  }
+
+  it('answers 204 with an empty body and the row is gone for a second app and a direct read', async () => {
+    const app = open();
+    const keep = await create(app, 'Keep me');
+    const gone = await create(app, 'Delete me');
+
+    const res = await app.inject({ method: 'DELETE', url: todoPath(gone.id) });
+
+    expect(res.statusCode).toBe(204);
+    expect(res.body).toBe('');
+    expect(row(gone.id)).toBeUndefined();
+    await app.close();
+    const second = open();
+    const list = await second.inject({ method: 'GET', url: TODOS_PATH });
+    expect(list.json<Todo[]>().map((t) => t.id)).toContain(keep.id);
+    expect(list.json<Todo[]>().map((t) => t.id)).not.toContain(gone.id);
+  });
+
+  it('answers 404 NOT_FOUND for an unknown id, a second delete, not-a-uuid, %20 and a trailing slash', async () => {
+    const app = open();
+    const subject = await create(app, 'Once only');
+    const before = count();
+    expect((await app.inject({ method: 'DELETE', url: todoPath(subject.id) })).statusCode).toBe(
+      204,
+    );
+
+    for (const url of [
+      todoPath(subject.id),
+      todoPath('00000000-0000-4000-8000-000000000000'),
+      todoPath('not-a-uuid'),
+      `${TODOS_PATH}/%20`,
+      `${TODOS_PATH}/`,
+    ]) {
+      const res = await app.inject({ method: 'DELETE', url });
+      expect(res.statusCode).toBe(404);
+      expect(res.json<Record<string, unknown>>().code).toBe(ErrorCode.NOT_FOUND);
+    }
+    expect(count()).toBe(before - 1);
+  });
+
+  it('answers a closed store with 500 INTERNAL_ERROR, no library text, and logs the error', async () => {
+    const lines: Record<string, unknown>[] = [];
+    const stream = new Writable({
+      write(chunk, _encoding, callback) {
+        lines.push(JSON.parse(String(chunk)) as Record<string, unknown>);
+        callback();
+      },
+    });
+    const repository = new SqliteTodoRepository(dbPath);
+    const app = open({ repository, logger: { level: 'error', stream } });
+    repository.close();
+
+    const res = await app.inject({ method: 'DELETE', url: `${TODOS_PATH}/any` });
+
+    expect(res.statusCode).toBe(500);
+    expect(res.json()).toEqual({ code: ErrorCode.INTERNAL_ERROR, message: 'Unexpected error' });
+    expect(res.body).not.toMatch(/database|connection|stack/i);
+    expect(lines.filter((line) => line.level === 50)).toHaveLength(1);
+  });
+});

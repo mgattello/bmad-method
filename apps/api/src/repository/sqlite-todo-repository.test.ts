@@ -176,6 +176,24 @@ describe('SqliteTodoRepository', () => {
     expect(() =>
       repository.update({ id: 'x', description: 'x', completed: false, createdAt: 't' }),
     ).toThrow('The database connection is not open');
+    expect(() => repository.remove('x')).toThrow('The database connection is not open');
     expect(() => repository.close()).not.toThrow();
+  });
+
+  it('removes one row, leaves the others, and ignores a missing id', () => {
+    const path = join(dir, 'remove.db');
+    const repository = new SqliteTodoRepository(path);
+    const seed = new Database(path);
+    const insert = seed.prepare(INSERT);
+    insert.run('a', 'first', 0, '2026-10-26T10:00:00.000Z');
+    insert.run('b', 'second', 1, '2026-10-26T11:00:00.000Z');
+    seed.close();
+
+    repository.remove('a');
+    expect(repository.findById('a')).toBeUndefined();
+    expect(repository.list().map((t) => t.id)).toEqual(['b']);
+    expect(() => repository.remove('missing')).not.toThrow();
+    expect(repository.list()).toHaveLength(1);
+    repository.close();
   });
 });

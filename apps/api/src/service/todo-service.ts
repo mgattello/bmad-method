@@ -48,6 +48,12 @@ export class TodoService {
     return updated;
   }
 
+  // Not-found when the id is not stored; otherwise the row is gone before this returns.
+  delete(id: string): void {
+    if (!this.repository.findById(id)) throw new NotFoundError('Todo not found');
+    this.repository.remove(id);
+  }
+
   // The one description rule, shared by create and update.
   private validDescription(raw: string): string {
     const trimmed = raw.trim();

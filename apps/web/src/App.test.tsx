@@ -1,7 +1,13 @@
 import { DESCRIPTION_MAX, type Todo } from '@todo/contract';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createTodo, listTodos, updateTodo, type ApiResult } from './api/todos-client.js';
+import {
+  createTodo,
+  deleteTodo,
+  listTodos,
+  updateTodo,
+  type ApiResult,
+} from './api/todos-client.js';
 import { App } from './App.js';
 import itemStyles from './components/TodoItem.module.css';
 import { addLabel, emptyStateCopy, errorCopy, loadingCopy, retryLabel } from './copy.js';
@@ -417,5 +423,79 @@ describe('App toggle', () => {
 
     expect(updateTodo).toHaveBeenCalledWith('b', { completed: true });
     expect(document.activeElement).toBe(screen.getByRole('checkbox', { name: '<b>x</b>' }));
+  });
+});
+
+describe('App delete', () => {
+  beforeEach(() => {
+    vi.mocked(listTodos).mockReset();
+    vi.mocked(updateTodo).mockReset();
+    vi.mocked(deleteTodo).mockReset();
+    vi.mocked(listTodos).mockResolvedValue({ ok: true, data: [todoB, todoA] });
+  });
+
+  it('disables only that item while pending, ignores repeats, then removes it', async () => {
+    const pending = deferred<null>();
+    vi.mocked(deleteTodo).mockReturnValueOnce(pending.promise);
+    render(<App />);
+    const remove = (await screen.findByRole('button', {
+      name: 'Delete first',
+    })) as HTMLButtonElement;
+
+    fireEvent.click(remove);
+    fireEvent.click(remove);
+
+    expect(deleteTodo).toHaveBeenCalledTimes(1);
+    expect(deleteTodo).toHaveBeenCalledWith('a');
+    expect(remove.disabled).toBe(true);
+    expect((screen.getByRole('checkbox', { name: 'first' }) as HTMLInputElement).disabled).toBe(
+      true,
+    );
+    expect((screen.getByRole('checkbox', { name: '<b>x</b>' }) as HTMLInputElement).disabled).toBe(
+      false,
+    );
+    expect(screen.getByText('first')).toBeDefined();
+
+    await act(async () => {
+      pending.resolve({ ok: true, data: null });
+    });
+    expect(screen.queryByText('first')).toBeNull();
+    expect(screen.getAllByRole('listitem')).toHaveLength(1);
+    expect(screen.getByRole('status').textContent).toBe('');
+  });
+
+  it('keeps the item and names the delete on a failure', async () => {
+    vi.mocked(deleteTodo).mockResolvedValueOnce({ ok: false, code: 'INTERNAL_ERROR' });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete first' }));
+
+    expect(await screen.findByText(errorCopy.delete.INTERNAL_ERROR)).toBeDefined();
+    expect(screen.getByText('first')).toBeDefined();
+    expect(
+      (screen.getByRole('button', { name: 'Delete first' }) as HTMLButtonElement).disabled,
+    ).toBe(false);
+    expect(document.body.textContent).not.toContain(serverMessage);
+  });
+
+  it('removes a vanished Todo and shows the message on NOT_FOUND', async () => {
+    vi.mocked(deleteTodo).mockResolvedValueOnce({ ok: false, code: 'NOT_FOUND' });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete first' }));
+
+    await waitFor(() => expect(screen.queryByText('first')).toBeNull());
+    expect(screen.getByRole('status').textContent).toBe(errorCopy.delete.NOT_FOUND);
+  });
+
+  it('returns to the Empty State when the last Todo is deleted', async () => {
+    vi.mocked(listTodos).mockResolvedValue({ ok: true, data: [todoA] });
+    vi.mocked(deleteTodo).mockResolvedValueOnce({ ok: true, data: null });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete first' }));
+
+    expect(await screen.findByText(emptyStateCopy)).toBeDefined();
+    expect(screen.queryByRole('list')).toBeNull();
   });
 });

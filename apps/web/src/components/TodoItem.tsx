@@ -9,7 +9,7 @@ type Props = {
   onDelete?: (todo: Todo) => void;
 };
 
-// Description is rendered as text content only; toggle is wired, delete lands in Story 2.4.
+// Description is rendered as text content only; toggle and delete are wired.
 export function TodoItem({ todo, pending, onToggle, onDelete }: Props) {
   const checkboxId = useId();
   const className = todo.completed ? `${styles.item} ${styles.completed}` : styles.item;

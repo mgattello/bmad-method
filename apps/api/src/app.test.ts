@@ -56,6 +56,7 @@ const broken: TodoRepository = {
   findById: down,
   insert: down,
   update: down,
+  remove: down,
   ping: down,
   close: () => {},
 };
@@ -401,6 +402,7 @@ describe('lifecycle', () => {
       findById: () => undefined,
       insert: () => {},
       update: () => {},
+      remove: () => {},
       ping: () => {},
       close,
     };
@@ -409,5 +411,33 @@ describe('lifecycle', () => {
     expect(close).not.toHaveBeenCalled();
     await instance.close();
     expect(close).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('DELETE todos', () => {
+  it('answers 204 with an empty body and removes the Todo', async () => {
+    const repository = new InMemoryTodoRepository(seed);
+    const res = await app(repository).inject({ method: 'DELETE', url: `${TODOS_PATH}/t2` });
+    expect(res.statusCode).toBe(204);
+    expect(res.body).toBe('');
+    expect(repository.findById('t2')).toBeUndefined();
+    expect(repository.list()).toHaveLength(seed.length - 1);
+  });
+
+  it('answers an unknown or malformed id with the NOT_FOUND envelope', async () => {
+    const instance = app(new InMemoryTodoRepository(seed));
+    for (const id of ['nope', 'not-a-uuid', '%20']) {
+      const res = await instance.inject({ method: 'DELETE', url: `${TODOS_PATH}/${id}` });
+      expect(res.statusCode).toBe(404);
+      expect(res.json()).toEqual({ code: ErrorCode.NOT_FOUND, message: 'Not found' });
+    }
+  });
+
+  it('answers a repository failure with 500 INTERNAL_ERROR and one error log line', async () => {
+    const { instance, lines } = withLogCapture(broken);
+    const res = await instance.inject({ method: 'DELETE', url: `${TODOS_PATH}/t1-first` });
+    expect(res.statusCode).toBe(500);
+    expect(res.json()).toEqual({ code: ErrorCode.INTERNAL_ERROR, message: 'Unexpected error' });
+    expect(lines.filter((line) => line.level === 50)).toHaveLength(1);
   });
 });

@@ -41,6 +41,7 @@ export class SqliteTodoRepository implements TodoRepository {
   private readonly findStmt: Database.Statement<[string], TodoRow>;
   private readonly insertStmt: Database.Statement<[string, string, 0 | 1, string], unknown>;
   private readonly updateStmt: Database.Statement<[string, 0 | 1, string], unknown>;
+  private readonly deleteStmt: Database.Statement<[string], unknown>;
   private readonly pingStmt: Database.Statement<[], unknown>;
 
   constructor(path: string) {
@@ -59,6 +60,7 @@ export class SqliteTodoRepository implements TodoRepository {
     this.updateStmt = this.db.prepare<[string, 0 | 1, string], unknown>(
       'UPDATE todos SET description = ?, completed = ? WHERE id = ?',
     );
+    this.deleteStmt = this.db.prepare<[string], unknown>('DELETE FROM todos WHERE id = ?');
     this.pingStmt = this.db.prepare<[], unknown>('SELECT 1');
   }
 
@@ -84,6 +86,11 @@ export class SqliteTodoRepository implements TodoRepository {
   // Same durability as insert: committed before this returns (AD-5).
   update(todo: Todo): void {
     this.updateStmt.run(todo.description, todo.completed ? 1 : 0, todo.id);
+  }
+
+  // Committed before this returns, like insert and update (AD-5).
+  remove(id: string): void {
+    this.deleteStmt.run(id);
   }
 
   ping(): void {

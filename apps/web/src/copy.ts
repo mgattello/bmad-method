@@ -1,7 +1,10 @@
 import { DESCRIPTION_MAX, type ErrorCode } from '@todo/contract';
 
 // Single home for user-facing copy; the server message is never rendered.
-export const errorCopy: Record<'load' | 'create' | 'toggle', Record<ErrorCode, string>> = {
+export const errorCopy: Record<
+  'load' | 'create' | 'toggle' | 'delete',
+  Record<ErrorCode, string>
+> = {
   load: {
     INTERNAL_ERROR: "We couldn't load your todos. Check your connection and try again.",
     NOT_FOUND: "We couldn't find your todo list. Try again.",
@@ -16,6 +19,11 @@ export const errorCopy: Record<'load' | 'create' | 'toggle', Record<ErrorCode, s
     INTERNAL_ERROR: "We couldn't update your todo. Check your connection and try again.",
     NOT_FOUND: 'That todo no longer exists, so it was removed from your list.',
     VALIDATION_ERROR: "We couldn't update your todo because the request was rejected. Try again.",
+  },
+  delete: {
+    INTERNAL_ERROR: "We couldn't delete your todo. Check your connection and try again.",
+    NOT_FOUND: 'That todo no longer exists, so it was removed from your list.',
+    VALIDATION_ERROR: "We couldn't delete your todo because the request was rejected. Try again.",
   },
 };
 

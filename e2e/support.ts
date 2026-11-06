@@ -15,7 +15,7 @@ async function unexpected(action: string, res: APIResponse): Promise<Error> {
   return new Error(`${action} answered ${res.status()}: ${await res.text()}`);
 }
 
-// Empties the store through the API; a 404 DELETE is tolerated until Story 2.4 ships the route.
+// Empties the store through the API; a 404 DELETE means the row is already gone.
 export async function purgeTodos(request: APIRequestContext): Promise<void> {
   const list = await request.get(TODOS_PATH);
   if (!list.ok()) throw await unexpected(`GET ${TODOS_PATH}`, list);

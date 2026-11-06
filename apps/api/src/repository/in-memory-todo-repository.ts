@@ -32,6 +32,11 @@ export class InMemoryTodoRepository implements TodoRepository {
     if (index !== -1) this.todos[index] = { ...todo };
   }
 
+  remove(id: string): void {
+    const index = this.todos.findIndex((t) => t.id === id);
+    if (index !== -1) this.todos.splice(index, 1);
+  }
+
   ping(): void {}
 
   close(): void {}

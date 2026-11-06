@@ -39,4 +39,13 @@ export const todoRoutes: FastifyPluginAsyncTypebox<TodoRoutesOptions> = async (
     },
     async (request) => service.update(request.params.id, request.body),
   );
+
+  app.delete(
+    `${TODOS_PATH}/:id`,
+    { schema: { params: Type.Object({ id: Type.String() }) } },
+    async (request, reply) => {
+      service.delete(request.params.id);
+      return reply.code(204).send();
+    },
+  );
 };

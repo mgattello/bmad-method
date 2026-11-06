@@ -11,6 +11,8 @@ export interface TodoRepository {
   insert(todo: Todo): void;
   // Stores description and completed for todo.id as given; throws when the store is unreachable.
   update(todo: Todo): void;
+  // Removes the row for id; a missing id is a no-op. Throws when the store is unreachable.
+  remove(id: string): void;
   // Throws when the store is unreachable.
   ping(): void;
   // Safe to call more than once.

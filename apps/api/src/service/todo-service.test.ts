@@ -38,6 +38,7 @@ describe('TodoService.list', () => {
       findById: () => undefined,
       insert: () => {},
       update: () => {},
+      remove: () => {},
       ping: () => {},
       close: () => {},
     };
@@ -52,6 +53,7 @@ describe('TodoService.list', () => {
       findById: () => undefined,
       insert: () => {},
       update: () => {},
+      remove: () => {},
       ping: () => {},
       close: () => {},
     };
@@ -69,6 +71,7 @@ describe('TodoService.ping', () => {
       findById: () => undefined,
       insert: () => {},
       update: () => {},
+      remove: () => {},
       ping,
       close: () => {},
     };
@@ -80,6 +83,7 @@ describe('TodoService.ping', () => {
       findById: () => undefined,
       insert: () => {},
       update: () => {},
+      remove: () => {},
       ping: () => {
         throw new Error('store down');
       },
@@ -98,6 +102,7 @@ describe('TodoService.create', () => {
       findById: () => undefined,
       insert,
       update: () => {},
+      remove: () => {},
       ping: () => {},
       close: () => {},
     };
@@ -288,6 +293,50 @@ describe('TodoService.update', () => {
       throw new Error('The database connection is not open');
     });
     expect(() => new TodoService(repository).update('open', { completed: true })).toThrow(
+      'The database connection is not open',
+    );
+  });
+});
+
+describe('TodoService.delete', () => {
+  it('removes the Todo from the repository and leaves the others', () => {
+    const repository = new InMemoryTodoRepository([todo('a', T1), todo('b', T2)]);
+
+    new TodoService(repository).delete('a');
+
+    expect(repository.list().map((t) => t.id)).toEqual(['b']);
+  });
+
+  it('throws NotFoundError for an unknown id and removes nothing', () => {
+    const remove = vi.fn();
+    const repository: TodoRepository = {
+      list: () => [],
+      findById: () => undefined,
+      insert: () => {},
+      update: () => {},
+      remove,
+      ping: () => {},
+      close: () => {},
+    };
+
+    expect(() => new TodoService(repository).delete('nope')).toThrow(NotFoundError);
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it('lets a repository failure propagate', () => {
+    const repository: TodoRepository = {
+      list: () => [],
+      findById: () => todo('a', T1),
+      insert: () => {},
+      update: () => {},
+      remove: () => {
+        throw new Error('The database connection is not open');
+      },
+      ping: () => {},
+      close: () => {},
+    };
+
+    expect(() => new TodoService(repository).delete('a')).toThrow(
       'The database connection is not open',
     );
   });

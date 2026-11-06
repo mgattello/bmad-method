@@ -65,3 +65,18 @@ export async function updateTodo(id: string, patch: UpdateTodoBody): Promise<Api
     return failure();
   }
 }
+
+// The only place the web talks to DELETE; a 204 has no body.
+export async function deleteTodo(id: string): Promise<ApiResult<null>> {
+  try {
+    const res = await fetch(todoPath(id), {
+      method: 'DELETE',
+      headers: { accept: 'application/json' },
+    });
+    if (res.status === 204) return { ok: true, data: null };
+    const body: unknown = await res.json().catch(() => undefined);
+    return res.ok ? failure() : { ok: false, code: envelopeCode(body) };
+  } catch {
+    return failure();
+  }
+}

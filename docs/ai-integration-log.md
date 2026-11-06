@@ -619,3 +619,34 @@ change was verified by tests only.
 **Limitations.** E2E rows left by `create.spec.ts` persist until Story 2.4 ships `DELETE`, so
 `empty-state` and `load-failure` fail on a store that is not empty; Story 2.4 makes the purge
 effective.
+
+## Story 2.4: Delete a Todo and publish the API contract
+
+**Date.** 2026-11-06.
+
+**Agent usage.** Written directly from the Story 2.4 acceptance criteria without a separate spec
+file: `DELETE /api/v1/todos/:id` (repository `remove`, `TodoService.delete`, a 204 route), the web
+`deleteTodo` client call and `useTodos.remove`, the wired Delete button, `e2e/delete.spec.ts`, and
+`docs/api.md` as the published contract.
+
+**Prompts.** The owner asked for the rest of the exercise to be completed without review, so the
+story was run unattended from `epics.md`.
+
+**MCPs and tools.** None. Vitest, the Story 1.5 Playwright harness, Docker Compose.
+
+**What the AI missed, and debugging.** The first route declared a `204` response schema of
+`Type.Null()`, which made `reply.send()` fail type-checking while the runtime tests still passed;
+the schema was dropped because the status code is set explicitly. Delete and toggle share one
+`pendingRef`, so a toggle on an id with a delete in flight is ignored; that case is covered in the
+hook tests.
+
+**Decisions made while implementing.** Delete does the same not-found-first lookup as update, so
+a second delete is `404`. The item leaves the list only after the `204` (no optimistic removal).
+`NOT_FOUND` removes the item locally and shows the message. The contract lives in `docs/api.md`
+and is linked from the README; `docs/architecture.md` keeps its summary table.
+
+**Review rounds.** None run, by the owner's instruction.
+
+**Limitations.** With DELETE live, the E2E purge empties the store, which closes the Story 1.5
+and 2.2 deferred hazard about files that sort after `stack.spec.ts`. The runner contract check
+(red suite exits non-zero and still tears down) is still only verified by hand.

@@ -9,7 +9,7 @@ import { errorCopy, retryLabel } from './copy.js';
 import { useTodos } from './state/use-todos.js';
 
 export function App() {
-  const { state, load, create, creating, toggle, pendingIds, writeError } = useTodos();
+  const { state, load, create, creating, toggle, remove, pendingIds, writeError } = useTodos();
   const messageId = useId();
   const failed = state.status === 'error';
   // One live region: the load error wins, then the pending write error.
@@ -40,7 +40,12 @@ export function App() {
           state.todos.length === 0 ? (
             <EmptyState />
           ) : (
-            <TodoList todos={state.todos} pendingIds={pendingIds} onToggle={toggle} />
+            <TodoList
+              todos={state.todos}
+              pendingIds={pendingIds}
+              onToggle={toggle}
+              onDelete={remove}
+            />
           )
         ) : null}
       </section>

@@ -1,7 +1,13 @@
 import { DESCRIPTION_MAX, type Todo } from '@todo/contract';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createTodo, listTodos, updateTodo, type ApiResult } from '../api/todos-client.js';
+import {
+  createTodo,
+  deleteTodo,
+  listTodos,
+  updateTodo,
+  type ApiResult,
+} from '../api/todos-client.js';
 import { useTodos } from './use-todos.js';
 
 vi.mock('../api/todos-client.js');
@@ -448,6 +454,109 @@ describe('useTodos toggle', () => {
     });
     await act(async () => {
       pending.resolve({ ok: true, data: { ...todoA, completed: true } });
+      await outcome;
+    });
+
+    expect(result.current.state).toEqual({ status: 'loading' });
+  });
+});
+
+describe('useTodos remove', () => {
+  beforeEach(() => {
+    vi.mocked(listTodos).mockReset();
+    vi.mocked(updateTodo).mockReset();
+    vi.mocked(deleteTodo).mockReset();
+  });
+
+  async function renderReady(todos: Todo[] = [todoA, todoB]) {
+    vi.mocked(listTodos).mockResolvedValue({ ok: true, data: todos });
+    const rendered = renderHook(() => useTodos());
+    await waitFor(() => expect(rendered.result.current.state.status).toBe('ready'));
+    return rendered;
+  }
+
+  it('removes the item only after the response and leaves the others in order', async () => {
+    const pending = deferred<null>();
+    vi.mocked(deleteTodo).mockReturnValueOnce(pending.promise);
+    const { result } = await renderReady([todoA, todoB, todoC]);
+
+    let outcome: Promise<void> = Promise.resolve();
+    act(() => {
+      outcome = result.current.remove(todoB);
+    });
+    expect(deleteTodo).toHaveBeenCalledWith('b');
+    expect(result.current.pendingIds.has('b')).toBe(true);
+    expect(result.current.state).toEqual({ status: 'ready', todos: [todoA, todoB, todoC] });
+
+    await act(async () => {
+      pending.resolve({ ok: true, data: null });
+      await outcome;
+    });
+    expect(result.current.state).toEqual({ status: 'ready', todos: [todoA, todoC] });
+    expect(result.current.pendingIds.size).toBe(0);
+    expect(result.current.writeError).toBeNull();
+  });
+
+  it('ignores a second delete and a toggle on the same id while pending', async () => {
+    const pending = deferred<null>();
+    vi.mocked(deleteTodo).mockReturnValueOnce(pending.promise);
+    const { result } = await renderReady();
+
+    let first: Promise<void> = Promise.resolve();
+    act(() => {
+      first = result.current.remove(todoA);
+      void result.current.remove(todoA);
+      void result.current.toggle(todoA);
+    });
+    await act(async () => {
+      pending.resolve({ ok: true, data: null });
+      await first;
+    });
+
+    expect(deleteTodo).toHaveBeenCalledTimes(1);
+    expect(updateTodo).not.toHaveBeenCalled();
+  });
+
+  it('keeps the item in place and sets a delete error on a failure', async () => {
+    vi.mocked(deleteTodo).mockResolvedValueOnce({ ok: false, code: 'INTERNAL_ERROR' });
+    const { result } = await renderReady();
+
+    await act(async () => {
+      await result.current.remove(todoA);
+    });
+
+    expect(result.current.state).toEqual({ status: 'ready', todos: [todoA, todoB] });
+    expect(result.current.writeError).toEqual({ action: 'delete', code: 'INTERNAL_ERROR' });
+    expect(result.current.pendingIds.size).toBe(0);
+  });
+
+  it('removes the item locally and sets the error on NOT_FOUND', async () => {
+    vi.mocked(deleteTodo).mockResolvedValueOnce({ ok: false, code: 'NOT_FOUND' });
+    const { result } = await renderReady();
+
+    await act(async () => {
+      await result.current.remove(todoA);
+    });
+
+    expect(result.current.state).toEqual({ status: 'ready', todos: [todoB] });
+    expect(result.current.writeError).toEqual({ action: 'delete', code: 'NOT_FOUND' });
+  });
+
+  it('ignores the result when the list is no longer ready', async () => {
+    const pending = deferred<null>();
+    vi.mocked(deleteTodo).mockReturnValueOnce(pending.promise);
+    const { result } = await renderReady();
+
+    let outcome: Promise<void> = Promise.resolve();
+    act(() => {
+      outcome = result.current.remove(todoA);
+    });
+    vi.mocked(listTodos).mockReturnValueOnce(new Promise(() => {}));
+    act(() => {
+      void result.current.load();
+    });
+    await act(async () => {
+      pending.resolve({ ok: true, data: null });
       await outcome;
     });
 
