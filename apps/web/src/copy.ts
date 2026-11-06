@@ -1,11 +1,16 @@
-import type { ErrorCode } from '@todo/contract';
+import { DESCRIPTION_MAX, type ErrorCode } from '@todo/contract';
 
 // Single home for user-facing copy; the server message is never rendered.
-export const errorCopy: Record<'load', Record<ErrorCode, string>> = {
+export const errorCopy: Record<'load' | 'create', Record<ErrorCode, string>> = {
   load: {
     INTERNAL_ERROR: "We couldn't load your todos. Check your connection and try again.",
     NOT_FOUND: "We couldn't find your todo list. Try again.",
     VALIDATION_ERROR: "We couldn't load your todos because the request was rejected. Try again.",
+  },
+  create: {
+    VALIDATION_ERROR: `Enter a todo of 1 to ${DESCRIPTION_MAX} characters.`,
+    INTERNAL_ERROR: "We couldn't add your todo. Check your connection and try again.",
+    NOT_FOUND: "We couldn't add your todo. Try again.",
   },
 };
 
@@ -14,3 +19,5 @@ export const emptyStateCopy = 'No todos yet. Add your first one above.';
 export const loadingCopy = 'Loading your todos';
 
 export const retryLabel = 'Retry';
+
+export const addLabel = 'Add';
