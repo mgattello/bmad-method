@@ -820,4 +820,9 @@ deliverable rather than claimed.
 
 **Review rounds.** None, by the owner's instruction.
 
-**Limitations.** The clean-checkout README run is described below, not witnessed by a second person.
+**Limitations.** Verified from a fresh `git clone` of the final commit: `npm ci`, `npm run lint`
+(0 errors), `npm test` (18, 64 and 115 tests; coverage 100% lines and 97.8% and 99% branches for
+api and web), `npm run test:int` (49 tests) and `npm run test:e2e` (40 tests on Chromium) all
+pass, and `docker compose up --build --wait` brings both containers to healthy on port 8080, a
+`POST` returns 201 and the API logs method, path, status and duration. The run was done by the
+agent, not witnessed by a second person.
