@@ -17,8 +17,19 @@ export class InMemoryTodoRepository implements TodoRepository {
       .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
   }
 
+  findById(id: string): Todo | undefined {
+    const found = this.todos.find((t) => t.id === id);
+    return found ? { ...found } : undefined;
+  }
+
   insert(todo: Todo): void {
     this.todos.push({ ...todo });
+  }
+
+  // Replaces in place so insertion order, and with it the tie-break, is unchanged.
+  update(todo: Todo): void {
+    const index = this.todos.findIndex((t) => t.id === todo.id);
+    if (index !== -1) this.todos[index] = { ...todo };
   }
 
   ping(): void {}

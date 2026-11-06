@@ -1,7 +1,7 @@
-import { DESCRIPTION_MAX, type Todo } from '@todo/contract';
+import { DESCRIPTION_MAX, type Todo, type UpdateTodoBody } from '@todo/contract';
 
 import type { TodoRepository } from '../repository/todo-repository.js';
-import { ValidationError } from './errors.js';
+import { NotFoundError, ValidationError } from './errors.js';
 
 const DESCRIPTION_RULE = `description must be 1 to ${DESCRIPTION_MAX} characters after trimming`;
 
@@ -22,19 +22,40 @@ export class TodoService {
 
   // Trim, then 1..DESCRIPTION_MAX (AD-6); id and createdAt are server-assigned (AD-2).
   create(description: string): Todo {
-    const trimmed = description.trim();
-    // Length counts UTF-16 code units, the same measure as the client's .length and HTML maxlength.
-    if (trimmed.length === 0 || trimmed.length > DESCRIPTION_MAX) {
-      throw new ValidationError(DESCRIPTION_RULE);
-    }
     const todo: Todo = {
       id: crypto.randomUUID(),
-      description: trimmed,
+      description: this.validDescription(description),
       completed: false,
       createdAt: new Date().toISOString(),
     };
     this.repository.insert(todo);
     return todo;
+  }
+
+  // Not-found first, then the description rule; id and createdAt come from the stored row (AD-2).
+  update(id: string, patch: UpdateTodoBody): Todo {
+    const existing = this.repository.findById(id);
+    if (!existing) throw new NotFoundError('Todo not found');
+    const updated: Todo = {
+      ...existing,
+      description:
+        patch.description !== undefined
+          ? this.validDescription(patch.description)
+          : existing.description,
+      completed: patch.completed ?? existing.completed,
+    };
+    this.repository.update(updated);
+    return updated;
+  }
+
+  // The one description rule, shared by create and update.
+  private validDescription(raw: string): string {
+    const trimmed = raw.trim();
+    // Length counts UTF-16 code units, the same measure as the client's .length and HTML maxlength.
+    if (trimmed.length === 0 || trimmed.length > DESCRIPTION_MAX) {
+      throw new ValidationError(DESCRIPTION_RULE);
+    }
+    return trimmed;
   }
 
   ping(): void {

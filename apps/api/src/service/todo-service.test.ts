@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { InMemoryTodoRepository } from '../repository/in-memory-todo-repository.js';
 import type { TodoRepository } from '../repository/todo-repository.js';
-import { ValidationError } from './errors.js';
+import { NotFoundError, ValidationError } from './errors.js';
 import { TodoService } from './todo-service.js';
 
 afterEach(() => {
@@ -35,7 +35,9 @@ describe('TodoService.list', () => {
   it('sorts an unordered repository result by createdAt desc and keeps repository order on ties', () => {
     const unordered: TodoRepository = {
       list: () => [todo('a', T1), todo('b', T2), todo('c', T1), todo('d', T2)],
+      findById: () => undefined,
       insert: () => {},
+      update: () => {},
       ping: () => {},
       close: () => {},
     };
@@ -47,7 +49,9 @@ describe('TodoService.list', () => {
     const rows = [todo('a', T1), todo('b', T2)];
     const repository: TodoRepository = {
       list: () => rows,
+      findById: () => undefined,
       insert: () => {},
+      update: () => {},
       ping: () => {},
       close: () => {},
     };
@@ -60,13 +64,22 @@ describe('TodoService.list', () => {
 describe('TodoService.ping', () => {
   it('delegates to the repository and lets its failure propagate', () => {
     const ping = vi.fn();
-    const ok: TodoRepository = { list: () => [], insert: () => {}, ping, close: () => {} };
+    const ok: TodoRepository = {
+      list: () => [],
+      findById: () => undefined,
+      insert: () => {},
+      update: () => {},
+      ping,
+      close: () => {},
+    };
     new TodoService(ok).ping();
     expect(ping).toHaveBeenCalledTimes(1);
 
     const broken: TodoRepository = {
       list: () => [],
+      findById: () => undefined,
       insert: () => {},
+      update: () => {},
       ping: () => {
         throw new Error('store down');
       },
@@ -80,7 +93,14 @@ describe('TodoService.create', () => {
   const RULE = `description must be 1 to ${DESCRIPTION_MAX} characters after trimming`;
 
   function stub(insert: TodoRepository['insert'] = () => {}): TodoRepository {
-    return { list: () => [], insert, ping: () => {}, close: () => {} };
+    return {
+      list: () => [],
+      findById: () => undefined,
+      insert,
+      update: () => {},
+      ping: () => {},
+      close: () => {},
+    };
   }
 
   it('trims, assigns id and createdAt, stores the trimmed value and returns it (golden)', () => {
@@ -174,6 +194,105 @@ describe('TodoService.create', () => {
   });
 });
 
+describe('TodoService.update', () => {
+  const RULE = `description must be 1 to ${DESCRIPTION_MAX} characters after trimming`;
+  const open: Todo = { id: 'open', description: 'Buy milk', completed: false, createdAt: T1 };
+  const done: Todo = { id: 'done', description: 'Walk dog', completed: true, createdAt: T2 };
+
+  function setup() {
+    const repository = new InMemoryTodoRepository([open, done]);
+    const update = vi.spyOn(repository, 'update');
+    return { service: new TodoService(repository), repository, update };
+  }
+
+  function catching(run: () => unknown): unknown {
+    try {
+      run();
+    } catch (error) {
+      return error;
+    }
+    return undefined;
+  }
+
+  it('ticks an open Todo, keeping id, description and createdAt, and stores the row', () => {
+    const { service, repository, update } = setup();
+    const result = service.update('open', { completed: true });
+    expect(result).toEqual({ ...open, completed: true });
+    expect(Object.keys(result)).toEqual(['id', 'description', 'completed', 'createdAt']);
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(repository.findById('open')).toEqual({ ...open, completed: true });
+    expect(repository.findById('done')).toEqual(done);
+  });
+
+  it('unticks a Completed Todo, keeping id, description and createdAt', () => {
+    const { service, repository } = setup();
+    expect(service.update('done', { completed: false })).toEqual({ ...done, completed: false });
+    expect(repository.findById('done')).toEqual({ ...done, completed: false });
+  });
+
+  it('trims a description, stores the trimmed value and leaves completed unchanged', () => {
+    const { service, repository } = setup();
+    expect(service.update('done', { description: '  New text  ' })).toEqual({
+      ...done,
+      description: 'New text',
+    });
+    expect(repository.findById('done')).toEqual({ ...done, description: 'New text' });
+  });
+
+  it('applies both fields when both are present', () => {
+    const { service, repository } = setup();
+    expect(service.update('open', { description: ' x ', completed: true })).toEqual({
+      ...open,
+      description: 'x',
+      completed: true,
+    });
+    expect(repository.findById('open')).toEqual({ ...open, description: 'x', completed: true });
+  });
+
+  it('accepts exactly DESCRIPTION_MAX characters after trim', () => {
+    const { service } = setup();
+    const max = 'a'.repeat(DESCRIPTION_MAX);
+    expect(service.update('open', { description: `  ${max}  ` }).description).toBe(max);
+  });
+
+  it.each(['', '   ', 'a'.repeat(DESCRIPTION_MAX + 1)])(
+    'rejects %j with ValidationError and does not call update',
+    (description) => {
+      const { service, repository, update } = setup();
+      const caught = catching(() => service.update('open', { description, completed: true }));
+      expect(caught).toBeInstanceOf(ValidationError);
+      expect(caught).toMatchObject({ statusCode: 400, name: 'ValidationError', message: RULE });
+      expect(update).not.toHaveBeenCalled();
+      expect(repository.findById('open')).toEqual(open);
+    },
+  );
+
+  it('throws NotFoundError for an unknown id and does not call update', () => {
+    const { service, update } = setup();
+    const caught = catching(() => service.update('missing', { completed: true }));
+    expect(caught).toBeInstanceOf(NotFoundError);
+    expect(caught).toMatchObject({ statusCode: 404, name: 'NotFoundError' });
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('answers not-found before the description rule', () => {
+    const { service, update } = setup();
+    const caught = catching(() => service.update('missing', { description: '' }));
+    expect(caught).toBeInstanceOf(NotFoundError);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('lets a repository update failure propagate', () => {
+    const repository = new InMemoryTodoRepository([open]);
+    vi.spyOn(repository, 'update').mockImplementation(() => {
+      throw new Error('The database connection is not open');
+    });
+    expect(() => new TodoService(repository).update('open', { completed: true })).toThrow(
+      'The database connection is not open',
+    );
+  });
+});
+
 describe('InMemoryTodoRepository', () => {
   it('returns a fresh copy each time', () => {
     const repository = new InMemoryTodoRepository([todo('a', T1)]);
@@ -191,5 +310,25 @@ describe('InMemoryTodoRepository', () => {
     b.description = 'mutated';
     expect(repository.list().map((t) => t.id)).toEqual(['b', 'a']);
     expect(repository.list()[0]?.description).toBe('b');
+  });
+
+  it('findById returns a copy, or undefined for an unknown id', () => {
+    const repository = new InMemoryTodoRepository([todo('a', T1)]);
+    const found = repository.findById('a');
+    expect(found).toEqual(todo('a', T1));
+    found!.description = 'mutated';
+    expect(repository.findById('a')?.description).toBe('a');
+    expect(repository.findById('zzz')).toBeUndefined();
+  });
+
+  it('update replaces the row in place, keeps list order and ignores an unknown id', () => {
+    const repository = new InMemoryTodoRepository([todo('a', T1), todo('b', T1), todo('c', T1)]);
+    const patched = { ...todo('a', T1), completed: true };
+    repository.update(patched);
+    patched.description = 'mutated';
+    expect(repository.list().map((t) => t.id)).toEqual(['c', 'b', 'a']);
+    expect(repository.findById('a')).toEqual({ ...todo('a', T1), completed: true });
+    repository.update(todo('zzz', T2));
+    expect(repository.list()).toHaveLength(3);
   });
 });
