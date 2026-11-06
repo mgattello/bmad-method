@@ -21,10 +21,11 @@ phase were for new behaviour (PATCH, DELETE, toggle, remove), not for padding.
 
 Two branches are uncovered:
 
-- `apps/api/src/repository/sqlite-todo-repository.ts` line 37, a defensive branch in
-  `openDatabase` setup. Left untested: reaching it needs a filesystem fault that would make the
-  test depend on the host.
-- `apps/web/src/state/use-todos.ts` line 83, the `NOT_FOUND` branch of `toggle` when the list is
+- `apps/api/src/repository/sqlite-todo-repository.ts` line 37, which v8 reports as one uncovered
+  branch at the `SqliteTodoRepository` class declaration. The source at that line holds no
+  conditional, so this is a v8 attribution artefact (an implicit branch of the class), not a
+  behaviour gap; every method of the class has its own tests.
+- `apps/web/src/state/use-todos.ts` line 83, the not-ready side of the `NOT_FOUND` removal in `toggle`, when the list is
   no longer `ready` (a toggle result landing after a reload started). The matching `remove` case
   is tested; the `toggle` one is the same guard on the same state check.
 
