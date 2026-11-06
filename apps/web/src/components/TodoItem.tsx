@@ -1,5 +1,5 @@
 import type { Todo } from '@todo/contract';
-import { useId } from 'react';
+import { useEffect, useId, useRef } from 'react';
 import styles from './TodoItem.module.css';
 
 type Props = {
@@ -12,6 +12,19 @@ type Props = {
 // Description is rendered as text content only; toggle and delete are wired.
 export function TodoItem({ todo, pending, onToggle, onDelete }: Props) {
   const checkboxId = useId();
+  const checkboxRef = useRef<HTMLInputElement>(null);
+  const deleteRef = useRef<HTMLButtonElement>(null);
+  // A disabled control drops focus, so remember which one the user used and refocus it after the write.
+  const lastUsed = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!pending && lastUsed.current) {
+      // Skipped when the control is gone (a deleted item unmounts).
+      lastUsed.current.focus();
+      lastUsed.current = null;
+    }
+  }, [pending]);
+
   const className = todo.completed ? `${styles.item} ${styles.completed}` : styles.item;
 
   return (
@@ -20,9 +33,13 @@ export function TodoItem({ todo, pending, onToggle, onDelete }: Props) {
         id={checkboxId}
         className={styles.checkbox}
         type="checkbox"
+        ref={checkboxRef}
         checked={todo.completed}
         disabled={pending}
-        onChange={() => onToggle?.(todo)}
+        onChange={() => {
+          lastUsed.current = checkboxRef.current;
+          onToggle?.(todo);
+        }}
       />
       <label className={styles.description} htmlFor={checkboxId}>
         {todo.description}
@@ -32,7 +49,11 @@ export function TodoItem({ todo, pending, onToggle, onDelete }: Props) {
         className={styles.delete}
         aria-label={`Delete ${todo.description}`}
         disabled={pending}
-        onClick={() => onDelete?.(todo)}
+        ref={deleteRef}
+        onClick={() => {
+          lastUsed.current = deleteRef.current;
+          onDelete?.(todo);
+        }}
       >
         Delete
       </button>

@@ -87,4 +87,51 @@ describe('TodoItem', () => {
     expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(true);
     expect(screen.getByRole('listitem').className).toContain('completed');
   });
+
+  it('refocuses the control the user used once the pending write ends', () => {
+    const { rerender } = render(
+      <ul>
+        <TodoItem todo={todo} onToggle={() => {}} />
+      </ul>,
+    );
+    const box = screen.getByRole('checkbox');
+    box.focus();
+    fireEvent.click(box);
+
+    rerender(
+      <ul>
+        <TodoItem todo={todo} pending onToggle={() => {}} />
+      </ul>,
+    );
+    box.blur();
+    rerender(
+      <ul>
+        <TodoItem todo={todo} pending={false} onToggle={() => {}} />
+      </ul>,
+    );
+
+    expect(document.activeElement).toBe(box);
+  });
+
+  it('refocuses Delete after a failed delete', () => {
+    const { rerender } = render(
+      <ul>
+        <TodoItem todo={todo} onDelete={() => {}} />
+      </ul>,
+    );
+    const remove = screen.getByRole('button', { name: 'Delete first' });
+    fireEvent.click(remove);
+    rerender(
+      <ul>
+        <TodoItem todo={todo} pending onDelete={() => {}} />
+      </ul>,
+    );
+    rerender(
+      <ul>
+        <TodoItem todo={todo} pending={false} onDelete={() => {}} />
+      </ul>,
+    );
+
+    expect(document.activeElement).toBe(remove);
+  });
 });
