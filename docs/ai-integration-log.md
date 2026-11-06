@@ -429,3 +429,83 @@ check its own writes. The `ValidationError` branch and the generic 4xx mapping b
 so a regression that drops the branch would only change the message, which the app and
 integration suites pin. Docker was not needed. Before this review round the api unit suite had 35
 tests at 100% lines and 100% branches, and the integration suite 20 tests.
+
+## Story 1.5: E2E harness proves the empty and failed-load journeys against the built images
+
+**Date:** 2026-10-26
+
+**Agent usage.** Claude Code (model Fable 5.1) ran as a BMAD build dispatch agent on branch
+`epic-1/story-1-5`, with the story spec as its only brief. It read the spec's `context:` files (the
+epic 1 context and the architecture spine), the root configs, the web components and copy the specs
+assert against, the api error handler and routes, `nginx.conf`, `docker-compose.yml` and the Story
+1.4 log entry, then wrote the `e2e` workspace (`package.json`, `tsconfig.json`, `stack.ts`,
+`run.ts`, `playwright.config.ts`, `support.ts`, `empty-state.spec.ts`, `load-failure.spec.ts`,
+`stack.spec.ts`, `README.md`), replaced the root `test:e2e` stub, and updated the README and this
+log. It ran every verification command itself against Docker on Colima (`aarch64`, Compose v5.6.1,
+Node 24.18): `npm install`, `npx playwright install chromium`, `npm run lint`, `npm test`, the full
+`npm run test:e2e`, the `--grep no-such-test` and `--grep "Empty"` runs, the teardown checks on the
+`todo-e2e` and `todo` projects and port 8080, the deliberate `e2e/support.ts` type error under
+`lint`, and beyond the spec's list it forced the two failure rows of the matrix: `up --build --wait`
+failing on an occupied port 8081, and a missing Chromium (`PLAYWRIGHT_BROWSERS_PATH` pointed at an
+empty directory).
+
+**Prompts.** One prompt: implement the story spec, treating it as the sole source of truth, load its
+context files first, and report what changed, how it was verified and what is left. No follow-up
+prompting was needed.
+
+**MCPs and tools.** No MCP servers were used. The agent worked through the shell: `npm`, `npx
+playwright`, `node`, `docker`, `docker compose`, `git`, `python3` for the README and log edits, and
+`perl`/`sed` for one-line patches. Playwright MCP was not used to author the specs; the DOM facts
+(`<section aria-label="Todo List">`, one `role="status"` always in the DOM, `aria-busy="true"` with
+visually hidden `Loading your todos`) came from reading `App.tsx` and the three components, and the
+copy literals were copied from `apps/web/src/copy.ts` by hand because `e2e` never imports `apps/*`.
+
+**What the AI missed, and debugging.** The full run passed first time (`7 passed`, Playwright
+8.4 s, 55 s wall including the cached image build and both teardowns). Three things needed
+correction along the way:
+
+1. `Array.prototype.findLast` in the log-line test failed the `e2e` typecheck: `tsconfig.base.json`
+   targets ES2022 and `findLast` is ES2023. Replaced with `filter(...).at(-1)` rather than raising
+   the target for one call.
+2. The first attempt at the "`up` fails" row occupied 8081 with `python3 -m http.server` bound to
+   `127.0.0.1`. Docker still published `0.0.0.0:8081`, `up --wait` reached healthy, and Playwright's
+   requests to `localhost:8081` landed on the Python server, so every `beforeEach` purge threw
+   `GET /api/v1/todos answered 404: <!DOCTYPE HTML>...`. That accidentally proved the purge's
+   "any other non-2xx throws with status and body" rule and that the `finally` teardown still runs
+   on spec failures (exit 1, project empty), but not the intended row. Publishing 8081 from another
+   container reproduced it properly: `Bind for 0.0.0.0:8081 failed: port is already allocated`,
+   then `docker compose up --build --wait exited with 1`, the closing `down -v`, exit 1.
+3. The spec's Code Map flagged that Playwright's loader might not resolve an explicit `./stack.ts`
+   specifier. It does (1.64.1 transforms the file itself), so every file uses `./stack.ts` and the
+   `./stack.js` fallback was not needed.
+
+**Decisions made while implementing.** `compose()` in `stack.ts` runs `spawnSync` with
+`encoding: 'utf8'` and defaults `stdio` to `pipe` so the specs get stdout back (`logs`, `exec`),
+while `run.ts` passes `stdio: 'inherit'` so the build and `--wait` progress stream to the terminal;
+a non-zero status throws with the command and captured stderr. `run.ts` catches the `up` error,
+prints its message, keeps exit status 1 and still runs `down -v` in `finally`; a Playwright exit
+status (including the `1` for "No tests found") is passed through with `process.exit`. The
+load-failure spec asserts the status region with `toContainText` rather than `toHaveText`: the
+Retry button is rendered inside the `role="status"` element, so its text is the message plus
+`Retry`; the button is then located inside the same region. The log-line test asserts the health
+line the matrix asks for and additionally requests a unique `GET /api/v1/nope-<uuid>` and expects
+exactly one line for it, since the health URL is also hit by the `HEALTHCHECK` every five seconds
+and cannot prove "one line per request" on its own. `empty-state.spec.ts` locates the Empty State
+inside `getByRole('region', { name: 'Todo List' })`, so the assertion fails if the copy moves out of
+the list region. The e2e `README.md` documents running the specs alone against a hand-started
+stack with the same `-p todo-e2e` and `WEB_PORT=8081`, and warns that `stack.spec.ts` restarts the
+containers. Measured: `empty-state` 117 ms, `load-failure` 303 ms, the five `stack` tests 11 ms to
+171 ms plus 5.8 s for the restart; `--grep "Empty"` runs one test in 550 ms with the same lifecycle.
+
+**Review rounds.** None at the time of writing; the dispatcher's build review appends here.
+
+**Limitations.** The two `--grep` runs and both failure rows each rebuild from the Docker cache,
+so a cold cache (first clone, or after a lockfile change) adds the full image build to the 55 s.
+`restart` keeps the same container addresses, so nginx's one-time resolution of `api` (noted in
+Story 1.4) is not exercised by the persistence test; recreating `api` alone remains untested.
+Until Story 2.4 ships `DELETE /api/v1/todos/:id` the purge is a no-op on every row it finds
+(the DELETE answers 404), which is why the restart test is the last test in the last file and
+creates the only row of the run. Firefox and WebKit are out of scope by the spec; the Chromium
+headless shell is what the run uses, and `--headed` needs the full Chromium that the same
+`npx playwright install chromium` installs. The `up`-failure row was reproduced with a port
+conflict only; a failing `HEALTHCHECK` would surface through the same `--wait` non-zero status.
