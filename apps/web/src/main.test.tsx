@@ -5,6 +5,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('./api/todos-client.js', () => ({
   listTodos: () => Promise.resolve({ ok: true, data: [] }),
   createTodo: () => Promise.resolve({ ok: false, code: 'INTERNAL_ERROR' }),
+  deleteTodo: () => Promise.resolve({ ok: false, code: 'INTERNAL_ERROR' }),
+  updateTodo: () => Promise.resolve({ ok: false, code: 'INTERNAL_ERROR' }),
 }));
 
 describe('web entry', () => {

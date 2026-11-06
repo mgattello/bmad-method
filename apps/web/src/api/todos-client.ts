@@ -1,4 +1,4 @@
-import { ErrorCode, TODOS_PATH, type Todo } from '@todo/contract';
+import { ErrorCode, TODOS_PATH, todoPath, type Todo, type UpdateTodoBody } from '@todo/contract';
 
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; code: ErrorCode };
 
@@ -45,6 +45,37 @@ export async function createTodo(description: string): Promise<ApiResult<Todo>> 
     const body: unknown = await res.json().catch(() => undefined);
     if (res.ok) return isTodo(body) ? { ok: true, data: body } : failure();
     return { ok: false, code: envelopeCode(body) };
+  } catch {
+    return failure();
+  }
+}
+
+// The only place the web talks to PATCH; takes a full UpdateTodoBody so later edits reuse it.
+export async function updateTodo(id: string, patch: UpdateTodoBody): Promise<ApiResult<Todo>> {
+  try {
+    const res = await fetch(todoPath(id), {
+      method: 'PATCH',
+      headers: { accept: 'application/json', 'content-type': 'application/json' },
+      body: JSON.stringify(patch),
+    });
+    const body: unknown = await res.json().catch(() => undefined);
+    if (res.ok) return isTodo(body) ? { ok: true, data: body } : failure();
+    return { ok: false, code: envelopeCode(body) };
+  } catch {
+    return failure();
+  }
+}
+
+// The only place the web talks to DELETE; a 204 has no body.
+export async function deleteTodo(id: string): Promise<ApiResult<null>> {
+  try {
+    const res = await fetch(todoPath(id), {
+      method: 'DELETE',
+      headers: { accept: 'application/json' },
+    });
+    if (res.status === 204) return { ok: true, data: null };
+    const body: unknown = await res.json().catch(() => undefined);
+    return res.ok ? failure() : { ok: false, code: envelopeCode(body) };
   } catch {
     return failure();
   }

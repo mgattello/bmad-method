@@ -1,6 +1,6 @@
 import { ErrorCode, TODOS_PATH } from '@todo/contract';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createTodo, listTodos } from './todos-client.js';
+import { createTodo, deleteTodo, listTodos, updateTodo } from './todos-client.js';
 
 function jsonResponse(status: number, body: string) {
   return new Response(body, { status, headers: { 'content-type': 'application/json' } });
@@ -167,4 +167,107 @@ describe('createTodo', () => {
       });
     },
   );
+});
+
+describe('updateTodo', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const updated = { ...todos[0], completed: true };
+
+  it('PATCHes the encoded todo path with both headers and the JSON body', async () => {
+    const fetchMock = stubFetch(jsonResponse(200, JSON.stringify(updated)));
+
+    await updateTodo('a/b', { completed: true });
+
+    expect(fetchMock).toHaveBeenCalledWith(`${TODOS_PATH}/a%2Fb`, {
+      method: 'PATCH',
+      headers: { accept: 'application/json', 'content-type': 'application/json' },
+      body: JSON.stringify({ completed: true }),
+    });
+  });
+
+  it('returns the Todo on 200', async () => {
+    stubFetch(jsonResponse(200, JSON.stringify(updated)));
+
+    await expect(updateTodo('b', { completed: true })).resolves.toEqual({
+      ok: true,
+      data: updated,
+    });
+  });
+
+  it('maps a 404 envelope to NOT_FOUND and discards the message', async () => {
+    stubFetch(jsonResponse(404, '{"code":"NOT_FOUND","message":"secret"}'));
+
+    const result = await updateTodo('b', { completed: true });
+
+    expect(result).toEqual({ ok: false, code: ErrorCode.NOT_FOUND });
+    expect(JSON.stringify(result)).not.toContain('secret');
+  });
+
+  it('maps a 400 envelope to VALIDATION_ERROR', async () => {
+    stubFetch(jsonResponse(400, '{"code":"VALIDATION_ERROR","message":"x"}'));
+
+    await expect(updateTodo('b', { completed: true })).resolves.toEqual({
+      ok: false,
+      code: ErrorCode.VALIDATION_ERROR,
+    });
+  });
+
+  it.each([
+    ['a 500 envelope', () => jsonResponse(500, '{"code":"INTERNAL_ERROR","message":"x"}')],
+    ['a 502 HTML body', () => new Response('<html></html>', { status: 502 })],
+    ['a network error', () => new Error('offline')],
+    ['a 2xx non-object', () => jsonResponse(200, '[]')],
+    ['a 2xx with a non-string id', () => jsonResponse(200, '{"id":1}')],
+  ])('maps %s to INTERNAL_ERROR', async (_name, make) => {
+    stubFetch(make());
+
+    await expect(updateTodo('b', { completed: true })).resolves.toEqual({
+      ok: false,
+      code: ErrorCode.INTERNAL_ERROR,
+    });
+  });
+});
+
+describe('deleteTodo', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('DELETEs the encoded todo path and returns ok on 204', async () => {
+    const fetchMock = stubFetch(new Response(null, { status: 204 }));
+
+    const result = await deleteTodo('a/b');
+
+    expect(fetchMock).toHaveBeenCalledWith(`${TODOS_PATH}/a%2Fb`, {
+      method: 'DELETE',
+      headers: { accept: 'application/json' },
+    });
+    expect(result).toEqual({ ok: true, data: null });
+  });
+
+  it('maps a 404 envelope to NOT_FOUND and discards the message', async () => {
+    stubFetch(jsonResponse(404, '{"code":"NOT_FOUND","message":"secret"}'));
+
+    const result = await deleteTodo('a');
+
+    expect(result).toEqual({ ok: false, code: ErrorCode.NOT_FOUND });
+    expect(JSON.stringify(result)).not.toContain('secret');
+  });
+
+  it.each([
+    ['a 500 envelope', () => jsonResponse(500, '{"code":"INTERNAL_ERROR","message":"x"}')],
+    ['a 502 HTML body', () => new Response('<html></html>', { status: 502 })],
+    ['a network error', () => new Error('offline')],
+    ['an unexpected 200', () => jsonResponse(200, '{}')],
+  ])('maps %s to INTERNAL_ERROR', async (_name, make) => {
+    stubFetch(make());
+
+    await expect(deleteTodo('a')).resolves.toEqual({
+      ok: false,
+      code: ErrorCode.INTERNAL_ERROR,
+    });
+  });
 });

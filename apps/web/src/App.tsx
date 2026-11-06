@@ -9,7 +9,7 @@ import { errorCopy, retryLabel } from './copy.js';
 import { useTodos } from './state/use-todos.js';
 
 export function App() {
-  const { state, load, create, creating, writeError } = useTodos();
+  const { state, load, create, creating, toggle, remove, pendingIds, writeError } = useTodos();
   const messageId = useId();
   const failed = state.status === 'error';
   // One live region: the load error wins, then the pending write error.
@@ -26,7 +26,7 @@ export function App() {
       <TodoInput
         onSubmit={create}
         disabled={creating || state.status !== 'ready'}
-        invalid={writeError?.code === 'VALIDATION_ERROR'}
+        invalid={writeError?.action === 'create' && writeError.code === 'VALIDATION_ERROR'}
         errorId={messageId}
       />
       <ErrorBanner
@@ -40,7 +40,12 @@ export function App() {
           state.todos.length === 0 ? (
             <EmptyState />
           ) : (
-            <TodoList todos={state.todos} />
+            <TodoList
+              todos={state.todos}
+              pendingIds={pendingIds}
+              onToggle={toggle}
+              onDelete={remove}
+            />
           )
         ) : null}
       </section>

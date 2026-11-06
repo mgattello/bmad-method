@@ -48,16 +48,16 @@ function withLogCapture(repository: TodoRepository) {
   return { instance, lines };
 }
 
+const down = () => {
+  throw new Error('The database connection is not open');
+};
 const broken: TodoRepository = {
-  list: () => {
-    throw new Error('The database connection is not open');
-  },
-  insert: () => {
-    throw new Error('The database connection is not open');
-  },
-  ping: () => {
-    throw new Error('The database connection is not open');
-  },
+  list: down,
+  findById: down,
+  insert: down,
+  update: down,
+  remove: down,
+  ping: down,
   close: () => {},
 };
 
@@ -144,6 +144,116 @@ describe('POST todos', () => {
       method: 'POST',
       url: TODOS_PATH,
       payload: { description: 'Buy milk' },
+    });
+    expect(res.statusCode).toBe(500);
+    expect(res.json()).toEqual({ code: ErrorCode.INTERNAL_ERROR, message: 'Unexpected error' });
+    expect(res.body).not.toMatch(/database|stack|at /);
+    expect(lines.filter((line) => line.level === 50)).toHaveLength(1);
+  });
+});
+
+describe('PATCH todos', () => {
+  const RULE = `description must be 1 to ${DESCRIPTION_MAX} characters after trimming`;
+
+  it('answers 200 with the updated Todo as JSON with exactly the contract fields', async () => {
+    const repository = new InMemoryTodoRepository(seed);
+    const res = await app(repository).inject({
+      method: 'PATCH',
+      url: `${TODOS_PATH}/t1-first`,
+      payload: { completed: true },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toMatch(/application\/json/);
+    const body = res.json<Todo>();
+    expect(Object.keys(body)).toEqual(['id', 'description', 'completed', 'createdAt']);
+    expect(body).toEqual({
+      id: 't1-first',
+      description: 'earlier',
+      completed: true,
+      createdAt: T1,
+    });
+    expect(repository.findById('t1-first')).toEqual(body);
+  });
+
+  it('applies a trimmed description and both fields together', async () => {
+    const instance = app(new InMemoryTodoRepository(seed));
+    const one = await instance.inject({
+      method: 'PATCH',
+      url: `${TODOS_PATH}/t2`,
+      payload: { description: '  New text  ' },
+    });
+    expect(one.statusCode).toBe(200);
+    expect(one.json()).toEqual({
+      id: 't2',
+      description: 'New text',
+      completed: true,
+      createdAt: T2,
+    });
+    const both = await instance.inject({
+      method: 'PATCH',
+      url: `${TODOS_PATH}/t2`,
+      payload: { description: ' x ', completed: false },
+    });
+    expect(both.json()).toEqual({ id: 't2', description: 'x', completed: false, createdAt: T2 });
+  });
+
+  it('answers a service rejection with 400 VALIDATION_ERROR carrying the rule text', async () => {
+    const repository = new InMemoryTodoRepository(seed);
+    const instance = app(repository);
+    for (const description of ['', '   ', 'a'.repeat(DESCRIPTION_MAX + 1)]) {
+      const res = await instance.inject({
+        method: 'PATCH',
+        url: `${TODOS_PATH}/t1-first`,
+        payload: { description },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json()).toEqual({ code: ErrorCode.VALIDATION_ERROR, message: RULE });
+    }
+    expect(repository.findById('t1-first')).toEqual(seed[1]);
+  });
+
+  it('answers a schema rejection with 400 VALIDATION_ERROR and the generic message', async () => {
+    const repository = new InMemoryTodoRepository(seed);
+    const instance = app(repository);
+    const payloads: Record<string, unknown>[] = [
+      {},
+      { owner: 'me' },
+      { completed: 'yes' },
+      { description: 1 },
+      { completed: true, owner: 'me' },
+    ];
+    for (const payload of payloads) {
+      const res = await instance.inject({
+        method: 'PATCH',
+        url: `${TODOS_PATH}/t1-first`,
+        payload,
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json()).toEqual({ code: ErrorCode.VALIDATION_ERROR, message: 'Invalid request' });
+    }
+    expect(repository.findById('t1-first')).toEqual(seed[1]);
+  });
+
+  it('answers an unknown id with the NOT_FOUND envelope, also when the body breaks a rule', async () => {
+    const instance = app();
+    for (const [id, payload] of [
+      ['11111111-2222-4333-8444-555555555555', { completed: true }],
+      ['not-a-uuid', { completed: true }],
+      ['%20', { completed: true }],
+      ['missing', { description: '' }],
+    ] as const) {
+      const res = await instance.inject({ method: 'PATCH', url: `${TODOS_PATH}/${id}`, payload });
+      expect(res.statusCode).toBe(404);
+      expect(res.json()).toEqual({ code: ErrorCode.NOT_FOUND, message: 'Not found' });
+    }
+  });
+
+  it('answers a repository failure with 500 INTERNAL_ERROR and one error log line', async () => {
+    const { instance, lines } = withLogCapture(broken);
+    const res = await instance.inject({
+      method: 'PATCH',
+      url: `${TODOS_PATH}/t1-first`,
+      payload: { completed: true },
     });
     expect(res.statusCode).toBe(500);
     expect(res.json()).toEqual({ code: ErrorCode.INTERNAL_ERROR, message: 'Unexpected error' });
@@ -287,11 +397,47 @@ describe('request log', () => {
 describe('lifecycle', () => {
   it('closes the repository when the app closes', async () => {
     const close = vi.fn();
-    const repository: TodoRepository = { list: () => [], insert: () => {}, ping: () => {}, close };
+    const repository: TodoRepository = {
+      list: () => [],
+      findById: () => undefined,
+      insert: () => {},
+      update: () => {},
+      remove: () => {},
+      ping: () => {},
+      close,
+    };
     const instance = buildApp({ repository });
     await instance.ready();
     expect(close).not.toHaveBeenCalled();
     await instance.close();
     expect(close).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('DELETE todos', () => {
+  it('answers 204 with an empty body and removes the Todo', async () => {
+    const repository = new InMemoryTodoRepository(seed);
+    const res = await app(repository).inject({ method: 'DELETE', url: `${TODOS_PATH}/t2` });
+    expect(res.statusCode).toBe(204);
+    expect(res.body).toBe('');
+    expect(repository.findById('t2')).toBeUndefined();
+    expect(repository.list()).toHaveLength(seed.length - 1);
+  });
+
+  it('answers an unknown or malformed id with the NOT_FOUND envelope', async () => {
+    const instance = app(new InMemoryTodoRepository(seed));
+    for (const id of ['nope', 'not-a-uuid', '%20']) {
+      const res = await instance.inject({ method: 'DELETE', url: `${TODOS_PATH}/${id}` });
+      expect(res.statusCode).toBe(404);
+      expect(res.json()).toEqual({ code: ErrorCode.NOT_FOUND, message: 'Not found' });
+    }
+  });
+
+  it('answers a repository failure with 500 INTERNAL_ERROR and one error log line', async () => {
+    const { instance, lines } = withLogCapture(broken);
+    const res = await instance.inject({ method: 'DELETE', url: `${TODOS_PATH}/t1-first` });
+    expect(res.statusCode).toBe(500);
+    expect(res.json()).toEqual({ code: ErrorCode.INTERNAL_ERROR, message: 'Unexpected error' });
+    expect(lines.filter((line) => line.level === 50)).toHaveLength(1);
   });
 });

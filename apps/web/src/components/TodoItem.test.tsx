@@ -41,4 +41,97 @@ describe('TodoItem', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Delete first' }));
     }).not.toThrow();
   });
+
+  it('disables the checkbox and delete while pending and delete fires nothing', () => {
+    const onDelete = vi.fn();
+    render(
+      <ul>
+        <TodoItem todo={todo} pending onDelete={onDelete} />
+      </ul>,
+    );
+
+    const checkbox = screen.getByRole('checkbox', { name: 'first' });
+    const remove = screen.getByRole('button', { name: 'Delete first' });
+    expect((checkbox as HTMLInputElement).disabled).toBe(true);
+    expect((remove as HTMLButtonElement).disabled).toBe(true);
+    // jsdom still dispatches a click on a disabled checkbox; browsers do not, so only the button is clicked.
+    fireEvent.click(remove);
+    expect(onDelete).not.toHaveBeenCalled();
+  });
+
+  it('enables both controls when not pending', () => {
+    render(
+      <ul>
+        <TodoItem todo={todo} />
+      </ul>,
+    );
+
+    expect((screen.getByRole('checkbox') as HTMLInputElement).disabled).toBe(false);
+    expect((screen.getByRole('button') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('checks the box and applies the completed class only when completed', () => {
+    const { rerender } = render(
+      <ul>
+        <TodoItem todo={todo} />
+      </ul>,
+    );
+    expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(false);
+    expect(screen.getByRole('listitem').className).not.toContain('completed');
+
+    rerender(
+      <ul>
+        <TodoItem todo={{ ...todo, completed: true }} />
+      </ul>,
+    );
+    expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(true);
+    expect(screen.getByRole('listitem').className).toContain('completed');
+  });
+
+  it('refocuses the control the user used once the pending write ends', () => {
+    const { rerender } = render(
+      <ul>
+        <TodoItem todo={todo} onToggle={() => {}} />
+      </ul>,
+    );
+    const box = screen.getByRole('checkbox');
+    box.focus();
+    fireEvent.click(box);
+
+    rerender(
+      <ul>
+        <TodoItem todo={todo} pending onToggle={() => {}} />
+      </ul>,
+    );
+    box.blur();
+    rerender(
+      <ul>
+        <TodoItem todo={todo} pending={false} onToggle={() => {}} />
+      </ul>,
+    );
+
+    expect(document.activeElement).toBe(box);
+  });
+
+  it('refocuses Delete after a failed delete', () => {
+    const { rerender } = render(
+      <ul>
+        <TodoItem todo={todo} onDelete={() => {}} />
+      </ul>,
+    );
+    const remove = screen.getByRole('button', { name: 'Delete first' });
+    fireEvent.click(remove);
+    rerender(
+      <ul>
+        <TodoItem todo={todo} pending onDelete={() => {}} />
+      </ul>,
+    );
+    rerender(
+      <ul>
+        <TodoItem todo={todo} pending={false} onDelete={() => {}} />
+      </ul>,
+    );
+
+    expect(document.activeElement).toBe(remove);
+  });
 });

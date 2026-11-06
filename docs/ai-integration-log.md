@@ -430,6 +430,86 @@ so a regression that drops the branch would only change the message, which the a
 integration suites pin. Docker was not needed. Before this review round the api unit suite had 35
 tests at 100% lines and 100% branches, and the integration suite 20 tests.
 
+## Story 1.5: E2E harness proves the empty and failed-load journeys against the built images
+
+**Date:** 2026-10-26
+
+**Agent usage.** Claude Code (model Fable 5.1) ran as a BMAD build dispatch agent on branch
+`epic-1/story-1-5`, with the story spec as its only brief. It read the spec's `context:` files (the
+epic 1 context and the architecture spine), the root configs, the web components and copy the specs
+assert against, the api error handler and routes, `nginx.conf`, `docker-compose.yml` and the Story
+1.4 log entry, then wrote the `e2e` workspace (`package.json`, `tsconfig.json`, `stack.ts`,
+`run.ts`, `playwright.config.ts`, `support.ts`, `empty-state.spec.ts`, `load-failure.spec.ts`,
+`stack.spec.ts`, `README.md`), replaced the root `test:e2e` stub, and updated the README and this
+log. It ran every verification command itself against Docker on Colima (`aarch64`, Compose v5.6.1,
+Node 24.18): `npm install`, `npx playwright install chromium`, `npm run lint`, `npm test`, the full
+`npm run test:e2e`, the `--grep no-such-test` and `--grep "Empty"` runs, the teardown checks on the
+`todo-e2e` and `todo` projects and port 8080, the deliberate `e2e/support.ts` type error under
+`lint`, and beyond the spec's list it forced the two failure rows of the matrix: `up --build --wait`
+failing on an occupied port 8081, and a missing Chromium (`PLAYWRIGHT_BROWSERS_PATH` pointed at an
+empty directory).
+
+**Prompts.** One prompt: implement the story spec, treating it as the sole source of truth, load its
+context files first, and report what changed, how it was verified and what is left. No follow-up
+prompting was needed.
+
+**MCPs and tools.** No MCP servers were used. The agent worked through the shell: `npm`, `npx
+playwright`, `node`, `docker`, `docker compose`, `git`, `python3` for the README and log edits, and
+`perl`/`sed` for one-line patches. Playwright MCP was not used to author the specs; the DOM facts
+(`<section aria-label="Todo List">`, one `role="status"` always in the DOM, `aria-busy="true"` with
+visually hidden `Loading your todos`) came from reading `App.tsx` and the three components, and the
+copy literals were copied from `apps/web/src/copy.ts` by hand because `e2e` never imports `apps/*`.
+
+**What the AI missed, and debugging.** The full run passed first time (`7 passed`, Playwright
+8.4 s, 55 s wall including the cached image build and both teardowns). Three things needed
+correction along the way:
+
+1. `Array.prototype.findLast` in the log-line test failed the `e2e` typecheck: `tsconfig.base.json`
+   targets ES2022 and `findLast` is ES2023. Replaced with `filter(...).at(-1)` rather than raising
+   the target for one call.
+2. The first attempt at the "`up` fails" row occupied 8081 with `python3 -m http.server` bound to
+   `127.0.0.1`. Docker still published `0.0.0.0:8081`, `up --wait` reached healthy, and Playwright's
+   requests to `localhost:8081` landed on the Python server, so every `beforeEach` purge threw
+   `GET /api/v1/todos answered 404: <!DOCTYPE HTML>...`. That accidentally proved the purge's
+   "any other non-2xx throws with status and body" rule and that the `finally` teardown still runs
+   on spec failures (exit 1, project empty), but not the intended row. Publishing 8081 from another
+   container reproduced it properly: `Bind for 0.0.0.0:8081 failed: port is already allocated`,
+   then `docker compose up --build --wait exited with 1`, the closing `down -v`, exit 1.
+3. The spec's Code Map flagged that Playwright's loader might not resolve an explicit `./stack.ts`
+   specifier. It does (1.64.1 transforms the file itself), so every file uses `./stack.ts` and the
+   `./stack.js` fallback was not needed.
+
+**Decisions made while implementing.** `compose()` in `stack.ts` runs `spawnSync` with
+`encoding: 'utf8'` and defaults `stdio` to `pipe` so the specs get stdout back (`logs`, `exec`),
+while `run.ts` passes `stdio: 'inherit'` so the build and `--wait` progress stream to the terminal;
+a non-zero status throws with the command and captured stderr. `run.ts` catches the `up` error,
+prints its message, keeps exit status 1 and still runs `down -v` in `finally`; a Playwright exit
+status (including the `1` for "No tests found") is passed through with `process.exit`. The
+load-failure spec asserts the status region with `toContainText` rather than `toHaveText`: the
+Retry button is rendered inside the `role="status"` element, so its text is the message plus
+`Retry`; the button is then located inside the same region. The log-line test asserts the health
+line the matrix asks for and additionally requests a unique `GET /api/v1/nope-<uuid>` and expects
+exactly one line for it, since the health URL is also hit by the `HEALTHCHECK` every five seconds
+and cannot prove "one line per request" on its own. `empty-state.spec.ts` locates the Empty State
+inside `getByRole('region', { name: 'Todo List' })`, so the assertion fails if the copy moves out of
+the list region. The e2e `README.md` documents running the specs alone against a hand-started
+stack with the same `-p todo-e2e` and `WEB_PORT=8081`, and warns that `stack.spec.ts` restarts the
+containers. Measured: `empty-state` 117 ms, `load-failure` 303 ms, the five `stack` tests 11 ms to
+171 ms plus 5.8 s for the restart; `--grep "Empty"` runs one test in 550 ms with the same lifecycle.
+
+**Review rounds.** None at the time of writing; the dispatcher's build review appends here.
+
+**Limitations.** The two `--grep` runs and both failure rows each rebuild from the Docker cache,
+so a cold cache (first clone, or after a lockfile change) adds the full image build to the 55 s.
+`restart` keeps the same container addresses, so nginx's one-time resolution of `api` (noted in
+Story 1.4) is not exercised by the persistence test; recreating `api` alone remains untested.
+Until Story 2.4 ships `DELETE /api/v1/todos/:id` the purge is a no-op on every row it finds
+(the DELETE answers 404), which is why the restart test is the last test in the last file and
+creates the only row of the run. Firefox and WebKit are out of scope by the spec; the Chromium
+headless shell is what the run uses, and `--headed` needs the full Chromium that the same
+`npx playwright install chromium` installs. The `up`-failure row was reproduced with a port
+conflict only; a failing `HEALTHCHECK` would surface through the same `--wait` non-zero status.
+
 ## Story 2.2: Add a Todo from the input
 
 **Date:** 2026-10-26
@@ -503,3 +583,246 @@ store. The `git diff main` boundary check is read against the spec's
 baseline commit `82c339d`, because this branch predates the Story 1.4 merge and `main` now holds
 the Dockerfiles that the branch does not. Focus assertions run in jsdom, so visible focus and the
 danger border are asserted by CSS rather than by a test.
+
+## Story 2.3: Tick and untick a Todo
+
+**Date.** 2026-11-06.
+
+**Agent usage.** The BMAD build workflow (spec, then dispatch) wrote `PATCH /api/v1/todos/:id`
+end to end: route, `TodoService.update`, repository `findById` and `update`, the web client
+`updateTodo`, the `useTodos` `toggle` and `pendingIds`, and the disabled-while-pending item.
+A second agent session took over after the API half was written and left uncommitted; the web
+half, tests, E2E spec and docs were finished from that state.
+
+**Prompts.** "Take over" was enough because the spec carried the I/O matrix and the golden hook
+example; the spec's Code Map named every file.
+
+**MCPs and tools.** None. Vitest for unit, component and integration tests, Playwright (Story
+1.5 harness) for `e2e/complete.spec.ts`.
+
+**What the AI missed, and debugging.** (1) Playwright's `check()` and `uncheck()` fail with
+"Clicking the checkbox did not change its state" because the app deliberately has no optimistic
+update; the spec now clicks and then asserts the state. (2) jsdom dispatches a click on a
+disabled checkbox where browsers do not, so the component test asserts the `disabled` attribute
+for the checkbox and the no-handler check only for the Delete button. (3) Story 2.2 had shipped
+its own `e2e/support/` helpers in parallel with Story 1.5's `support.ts`; they were merged into
+`support.ts` and the duplicate directory removed.
+
+**Decisions made while implementing.** Not-found wins over an invalid description (the service
+looks the Todo up first). `toggle` sends the flipped status from the rendered Todo and never a
+description. `updateTodo` takes a full `UpdateTodoBody` so Story 2.4 and a later edit reuse it.
+`App` marks the input invalid only for the create action.
+
+**Review rounds.** None run: the owner asked for completion without review, so the Story 2.3
+change was verified by tests only.
+
+**Limitations.** E2E rows left by `create.spec.ts` persist until Story 2.4 ships `DELETE`, so
+`empty-state` and `load-failure` fail on a store that is not empty; Story 2.4 makes the purge
+effective.
+
+## Story 2.4: Delete a Todo and publish the API contract
+
+**Date.** 2026-11-06.
+
+**Agent usage.** Written directly from the Story 2.4 acceptance criteria without a separate spec
+file: `DELETE /api/v1/todos/:id` (repository `remove`, `TodoService.delete`, a 204 route), the web
+`deleteTodo` client call and `useTodos.remove`, the wired Delete button, `e2e/delete.spec.ts`, and
+`docs/api.md` as the published contract.
+
+**Prompts.** The owner asked for the rest of the exercise to be completed without review, so the
+story was run unattended from `epics.md`.
+
+**MCPs and tools.** None. Vitest, the Story 1.5 Playwright harness, Docker Compose.
+
+**What the AI missed, and debugging.** The first route declared a `204` response schema of
+`Type.Null()`, which made `reply.send()` fail type-checking while the runtime tests still passed;
+the schema was dropped because the status code is set explicitly. Delete and toggle share one
+`pendingRef`, so a toggle on an id with a delete in flight is ignored; that case is covered in the
+hook tests.
+
+**Decisions made while implementing.** Delete does the same not-found-first lookup as update, so
+a second delete is `404`. The item leaves the list only after the `204` (no optimistic removal).
+`NOT_FOUND` removes the item locally and shows the message. The contract lives in `docs/api.md`
+and is linked from the README; `docs/architecture.md` keeps its summary table.
+
+**Review rounds.** None run, by the owner's instruction.
+
+**Limitations.** With DELETE live, the E2E purge empties the store, which closes the Story 1.5
+and 2.2 deferred hazard about files that sort after `stack.spec.ts`. The runner contract check
+(red suite exits non-zero and still tears down) is still only verified by hand.
+
+## Story 2.5: Keyboard, screen reader and small-screen fit
+
+**Date.** 2026-11-06.
+
+**Agent usage.** Run unattended from `epics.md`. The earlier stories had already built 44 px
+controls, focus outlines, a single `role="status"` region and a wrapping layout, so this story was
+mostly proof: component tests for roles, names and tab order, `e2e/error-handling.spec.ts`
+(UJ-3: a `page.route` abort on the create `POST`, then `unroute` and a successful create) and
+`e2e/mobile.spec.ts` (the main journey at 360 px, bounding boxes of at least 44 px, and no
+horizontal overflow from 320 px to 1920 px). The one source change is `--breakpoint-sm` in
+`tokens.css`.
+
+**Prompts.** None beyond the owner's instruction to finish without review.
+
+**MCPs and tools.** None. Playwright under the Story 1.5 harness.
+
+**What the AI missed, and debugging.** Nothing failed on first run. Custom properties cannot be
+used inside `@media`, so the "single breakpoint in `tokens.css`" is a token plus a comment that
+`App.module.css` repeats `40rem`; a CSS preprocessor would remove the repeat but is out of scope.
+The checkbox control itself is 24 px; the 44 px target is its label, which spans the row and
+toggles it, and the test measures the label.
+
+**Decisions made while implementing.** Tab order is asserted in jsdom from document order (input,
+Add, then each checkbox and Delete); real focus movement is exercised by the E2E specs.
+
+**Review rounds.** None run, by the owner's instruction.
+
+**Limitations.** Contrast and screen reader output are not measured here; Story 3.2 runs the axe
+audit.
+
+## Story 3.1: Coverage gate and gap analysis
+
+**Date.** 2026-11-06.
+
+**Agent usage.** The coverage gate (70% lines and branches per app) already existed in each
+`vitest.config.ts`, so the story was the analysis. The agent read the v8 reports, found two
+uncovered branches, and ran eight hand-made mutations (trim removed, not-found check removed,
+off-by-one limit, ignored error code, wrong toggle status, create at the end, guard removed) to see
+whether the tests would notice. All eight failed a test. Written up in `docs/qa/coverage.md`.
+
+**Prompts.** "Complete without my review" was the only instruction.
+
+**MCPs and tools.** None. Vitest coverage, `sed` mutations reverted with `git checkout`.
+
+**What the AI missed, and debugging.** The first draft of the report described the uncovered
+branch at `sqlite-todo-repository.ts` line 37 as a defensive branch in database setup without
+reading the line. It is a v8 attribution at the class declaration. Corrected after checking the
+source.
+
+**Decisions made while implementing.** Mutation spot checks by hand instead of adding a mutation
+testing dependency.
+
+**Review rounds.** None, by the owner's instruction.
+
+**Limitations.** Eight mutations are a sample, not a mutation score.
+
+## Story 3.2: Accessibility audit
+
+**Date.** 2026-11-06.
+
+**Agent usage.** Added `@axe-core/playwright` 4.14.0 and `e2e/accessibility.spec.ts` (four states
+at 360 px and 1280 px, failing on critical or serious), plus `e2e/keyboard.spec.ts`.
+
+**Prompts.** None beyond the unattended instruction.
+
+**MCPs and tools.** axe-core through Playwright. A negative control on a deliberately bad page
+showed the audit reports `button-name` and `image-alt` as critical.
+
+**What the AI missed, and debugging.** axe reported zero violations, but the keyboard journey test
+failed: a Todo's checkbox is disabled while its write is pending, which drops focus, so a second
+Space did nothing. The AI had written the pending-disable rule in Story 2.3 without considering
+focus. Fixed by refocusing the control that was used when the write ends, with component tests.
+
+**Decisions made while implementing.** Fail on critical and serious, log moderate and minor.
+
+**Review rounds.** None, by the owner's instruction.
+
+**Limitations.** Manual screen-reader and Firefox/Safari checks need a person and are recorded as
+open in `docs/qa/accessibility.md`. Story 3.2 therefore stays `in-progress` in the sprint file.
+
+## Story 3.3: Performance report
+
+**Date.** 2026-11-06.
+
+**Agent usage.** `e2e/performance.spec.ts` seeds 200 Todos and times render, create, tick and
+delete. Lighthouse 12.8.2 (mobile preset) ran three times against the built images.
+
+**Prompts.** None.
+
+**MCPs and tools.** Lighthouse CLI. The Chrome DevTools MCP was not available in this session, so
+it was not used and the report says so.
+
+**What the AI missed, and debugging.** The first Lighthouse run scored 0.85. The AI had never
+checked that nginx compresses responses; the 290 KiB bundle went out raw. Adding `gzip on` and a
+one-year `expires` for hashed assets raised the score to 0.97 on three runs. A stack test now
+guards both and confirms the security headers still apply to `/assets/`.
+
+**Decisions made while implementing.** `expires` rather than `add_header` so server-level headers
+keep inheriting. E2E bounds are generous (2 s and 500 ms) to stay stable.
+
+**Review rounds.** None, by the owner's instruction.
+
+**Limitations.** The manual real-device check is not done.
+
+## Story 3.4: Security review
+
+**Date.** 2026-11-06.
+
+**Agent usage.** Searched for unsafe rendering and SQL construction, read both Dockerfiles and
+`nginx.conf`, ran `npm audit`, and added an integration test (HTML and SQL payloads stored
+verbatim, a SQL-looking id is a 404 that changes nothing) and an E2E XSS test.
+
+**Prompts.** None.
+
+**MCPs and tools.** `grep`, `npm audit`, Docker.
+
+**What the AI missed, and debugging.** One of the evidence greps silently failed on a shell glob
+(`no matches found`) and the first draft of the report claimed a clean result. It was re-run
+properly before the claim was kept. The review itself found the missing `frame-ancestors`
+coverage: CSP `default-src` does not stop framing, so `X-Frame-Options: DENY` and
+`Referrer-Policy: no-referrer` were added.
+
+**Decisions made while implementing.** Dev-only moderate audit findings in the ESLint toolchain
+are an accepted risk, not an upgrade to a breaking major.
+
+**Review rounds.** None, by the owner's instruction.
+
+**Limitations.** This is a code and configuration review, not a penetration test.
+
+## Story 3.5: Journey coverage
+
+**Date.** 2026-11-06.
+
+**Agent usage.** `e2e/journeys.spec.ts` for UJ-1 (360 px, four creates, empty-line refusal) and UJ-2
+(second browser context). UJ-3 and the restart journey were already covered. `docs/qa/walkthrough.md`
+maps every journey to its spec.
+
+**Prompts.** None.
+
+**MCPs and tools.** Playwright.
+
+**What the AI missed, and debugging.** Nothing failed on first run.
+
+**Decisions made while implementing.** The unguided walkthrough (SM-1) needs a person who has not
+seen the app. The AI cannot supply one, so `walkthrough.md` holds the protocol with every result
+marked `pending` and Story 3.5 stays `in-progress`.
+
+**Review rounds.** None, by the owner's instruction.
+
+**Limitations.** The human walkthrough is not done.
+
+## Story 3.6: Final documentation
+
+**Date.** 2026-11-06.
+
+**Agent usage.** README documentation and QA links, `docs/bmad-process.md`, and the entries above.
+
+**Prompts.** None.
+
+**MCPs and tools.** None.
+
+**What the AI missed, and debugging.** The framework comparison heading in the course brief has no
+content, so whether a comparison is expected is unresolved and recorded as such, not invented.
+
+**Decisions made while implementing.** The project brief is listed as a separate pending
+deliverable rather than claimed.
+
+**Review rounds.** None, by the owner's instruction.
+
+**Limitations.** Verified from a fresh `git clone` of the final commit: `npm ci`, `npm run lint`
+(0 errors), `npm test` (18, 64 and 115 tests; coverage 100% lines and 97.8% and 99% branches for
+api and web), `npm run test:int` (49 tests) and `npm run test:e2e` (40 tests on Chromium) all
+pass, and `docker compose up --build --wait` brings both containers to healthy on port 8080, a
+`POST` returns 201 and the API logs method, path, status and duration. The run was done by the
+agent, not witnessed by a second person.
