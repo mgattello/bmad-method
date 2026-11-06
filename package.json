@@ -17,7 +17,7 @@
     "build": "npm run build -w packages/contract && npm run build -w apps/api && npm run build -w apps/web",
     "test": "npm run build -w packages/contract && npm run test -w packages/contract && npm run test -w apps/api && npm run test -w apps/web",
     "test:int": "npm run build -w packages/contract && npm run test:int -w apps/api",
-    "test:e2e": "echo \"E2E harness: configured in Story 1.5\"",
+    "test:e2e": "npm run build -w packages/contract && node e2e/run.ts",
     "lint": "npm run build -w packages/contract && eslint . && prettier --check . && npm run typecheck --workspaces --if-present",
     "dev:api": "npm run build -w packages/contract && concurrently -k -n contract,api \"npm run dev -w packages/contract\" \"npm run dev -w apps/api\"",
     "format": "prettier --write ."

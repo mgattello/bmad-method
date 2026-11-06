@@ -13,6 +13,8 @@ decisions live in the architecture spine it links to. Every story appends to
 - Python 3 (node-gyp's configure step for better-sqlite3; nothing is compiled, prebuilt bindings are
   used)
 - Docker with Compose v2 (the graded `docker compose up` and the E2E harness)
+- Chromium for Playwright, installed once with `npx playwright install chromium` after `npm ci`
+  (the E2E harness only)
 
 ## Layout
 
@@ -29,27 +31,27 @@ apps/api/                @todo/api: Fastify API on SQLite (better-sqlite3)
 apps/api/src/            app.ts (buildApp), server.ts (env + listen), routes/, service/, repository/
 apps/api/test/           API integration specs (*.int.test.ts, fastify.inject on a temp SQLite file)
 apps/web/                @todo/web: React + Vite client: list, loading, empty and error states
-e2e/                     Playwright harness (Story 1.5)
+e2e/                     @todo/e2e: Playwright harness (run.ts lifecycle, *.spec.ts against the built images)
 docs/                    architecture.md, ai-integration-log.md, qa/
 ```
 
 `packages/contract` is the only definition of the API. Both apps import it and declare no
 `Todo` type or `/api/v1` path of their own. It must be built before either app; every root
-script except `test:e2e` does that for you.
+script does that for you.
 
 ## Commands
 
 Run from the repository root.
 
-| Command            | What it does                                                                              |
-| ------------------ | ----------------------------------------------------------------------------------------- |
-| `npm ci`           | Install every workspace from the one root `package-lock.json`                             |
-| `npm run build`    | Build contract, then api, then web                                                        |
-| `npm test`         | Unit tests with coverage (70% lines and branches per app) for all three                   |
-| `npm run test:int` | API integration tests (`apps/api/test/*.int.test.ts`): todos GET and POST, health, errors |
-| `npm run test:e2e` | E2E against the built images (placeholder until Story 1.5)                                |
-| `npm run lint`     | Build contract, ESLint, Prettier check, then type-check every workspace (tests included)  |
-| `npm run format`   | Prettier write                                                                            |
+| Command            | What it does                                                                                         |
+| ------------------ | ---------------------------------------------------------------------------------------------------- |
+| `npm ci`           | Install every workspace from the one root `package-lock.json`                                        |
+| `npm run build`    | Build contract, then api, then web                                                                   |
+| `npm test`         | Unit tests with coverage (70% lines and branches per app) for all three                              |
+| `npm run test:int` | API integration tests (`apps/api/test/*.int.test.ts`): todos GET and POST, health, errors            |
+| `npm run test:e2e` | Build the images, run Playwright on Chromium against them (project `todo-e2e`, port 8081), tear down |
+| `npm run lint`     | Build contract, ESLint, Prettier check, then type-check every workspace (tests included)             |
+| `npm run format`   | Prettier write                                                                                       |
 
 Workspace scripts can be run alone, for example `npm run dev -w apps/web`. Build the contract
 first on a fresh checkout: `npm run build -w packages/contract`.
@@ -147,4 +149,39 @@ profile too; to run only the hot-reload pair, name them:
 
 ## E2E
 
-Added in Story 1.5.
+Once, after `npm ci`, install the browser Playwright drives (about 100 MB, kept in Playwright's
+own cache, not in the repository):
+
+```sh
+npx playwright install chromium
+```
+
+Then, with Docker running:
+
+```sh
+npm run test:e2e
+```
+
+That builds the contract and runs `e2e/run.ts`, which issues every Docker command from the
+repository root with `WEB_PORT=8081`: `docker compose -p todo-e2e down -v` first (a clean slate,
+even after an aborted run), `docker compose -p todo-e2e up --build --wait` (builds the images
+`todo-e2e-api` and `todo-e2e-web` and blocks until both `HEALTHCHECK`s pass), Playwright on
+Chromium against `http://localhost:8081` with one worker, and finally
+`docker compose -p todo-e2e down -v` again, whatever happened before it. The exit status is
+Playwright's; a failed `up` exits non-zero after the teardown. The separate project name and port
+mean the default stack on 8080, if it is running, keeps running and keeps its data; nothing under
+project `todo` is touched. Afterwards `docker compose -p todo-e2e ps -a` lists nothing.
+
+Three spec files run in order: `empty-state.spec.ts` (Empty State on a fresh store),
+`load-failure.spec.ts` (Error State and Retry when the list request is aborted in the browser with
+`page.route`; the API has no test endpoint) and `stack.spec.ts` (the container contract: security
+headers and `/healthz`, `/api/` passthrough, one JSON log line per request, non-root users, and
+Todos surviving `docker compose restart`). Every spec purges the store before each test through
+the API: it lists the Todos and deletes each one. Until Story 2.4 ships
+`DELETE /api/v1/todos/:id` that delete answers 404, which the purge tolerates; the restart test's
+one row is the last thing the run creates, and `down -v` removes the volume anyway.
+
+Extra arguments go to Playwright, for example `npm run test:e2e -- --grep "Empty"` or
+`npm run test:e2e -- --headed`. On a failure Playwright keeps a trace under `e2e/test-results/`
+(`npx playwright show-trace <trace.zip>`); the stack is still torn down. To run the specs alone
+against a stack you started by hand, see [e2e/README.md](e2e/README.md).
