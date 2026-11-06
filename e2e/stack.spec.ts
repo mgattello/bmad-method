@@ -37,6 +37,21 @@ test('web serves the page and /healthz with the security headers', async ({ requ
   expect(await health.text()).toBe('ok');
 });
 
+test('hashed assets are gzipped and cacheable and keep the security headers', async ({
+  request,
+}) => {
+  const html = await (await request.get('/')).text();
+  const asset = /\/assets\/index-[\w-]+\.js/.exec(html)?.[0];
+  expect(asset).toBeDefined();
+
+  const res = await request.get(asset as string);
+
+  expect(res.status()).toBe(200);
+  expect(res.headers()['content-encoding']).toBe('gzip');
+  expect(res.headers()['cache-control']).toContain('max-age=31536000');
+  expectSecurityHeaders(res);
+});
+
 test('nginx passes /api/ through to the api unchanged', async ({ request }) => {
   const health = await request.get(HEALTH_PATH);
   expect(health.status()).toBe(200);
