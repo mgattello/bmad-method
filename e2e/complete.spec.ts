@@ -32,9 +32,7 @@ test('ticking a todo checks it and strikes through the label', async ({ page, re
 
   await expect(box).toBeChecked();
   await expect(box).toBeEnabled();
-  await expect(
-    page.getByText(await box.evaluate((el) => el.nextElementSibling?.textContent ?? '')),
-  ).toHaveCSS('text-decoration-line', 'line-through');
+  await expect(page.getByText(description)).toHaveCSS('text-decoration-line', 'line-through');
   await expect(page.getByRole('status')).toBeEmpty();
 });
 
