@@ -55,7 +55,7 @@ development_status:
   3-1-coverage-gate-and-gap-analysis: done
   3-2-accessibility-audit-with-zero-critical-violations: in-progress
   3-3-performance-report-against-the-200-item-fixture: done
-  3-4-security-review-and-remediation: backlog
+  3-4-security-review-and-remediation: done
   3-5-journey-coverage-and-unguided-walkthrough: backlog
   3-6-final-documentation-and-bmad-process-record: backlog
   epic-3-retrospective: optional

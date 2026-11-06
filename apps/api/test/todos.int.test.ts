@@ -531,3 +531,47 @@ describe(`DELETE ${TODOS_PATH}/:id`, () => {
     expect(lines.filter((line) => line.level === 50)).toHaveLength(1);
   });
 });
+
+describe('untrusted descriptions', () => {
+  const payloads = [
+    '<script>alert(1)</script><img src=x onerror=alert(1)>',
+    "'); DROP TABLE todos; --",
+    '" OR 1=1 --',
+  ];
+
+  it('stores and returns HTML and SQL text byte for byte, and the table survives', async () => {
+    const app = open();
+    for (const description of payloads) {
+      const created = await app.inject({
+        method: 'POST',
+        url: TODOS_PATH,
+        payload: { description },
+      });
+      expect(created.statusCode).toBe(201);
+      expect(created.json<Todo>().description).toBe(description);
+    }
+    const list = await app.inject({ method: 'GET', url: TODOS_PATH });
+    const stored = list.json<Todo[]>().map((t) => t.description);
+    for (const description of payloads) expect(stored).toContain(description);
+    expect(count()).toBeGreaterThanOrEqual(payloads.length);
+  });
+
+  it('does not let an id with SQL in it touch other rows', async () => {
+    const app = open();
+    const keep = await app.inject({
+      method: 'POST',
+      url: TODOS_PATH,
+      payload: { description: 'Keep' },
+    });
+    const before = count();
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: todoPath("x' OR '1'='1"),
+    });
+
+    expect(res.statusCode).toBe(404);
+    expect(count()).toBe(before);
+    expect(row(keep.json<Todo>().id)).toBeDefined();
+  });
+});

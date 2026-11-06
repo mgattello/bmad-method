@@ -11,6 +11,8 @@ type RequestLine = { method?: string; url?: string; statusCode?: number; respons
 function expectSecurityHeaders(res: APIResponse): void {
   expect(res.headers()['x-content-type-options']).toBe('nosniff');
   expect(res.headers()['content-security-policy']).toBe("default-src 'self'");
+  expect(res.headers()['x-frame-options']).toBe('DENY');
+  expect(res.headers()['referrer-policy']).toBe('no-referrer');
 }
 
 // Every api log line is JSON; anything else (none expected) is dropped.
