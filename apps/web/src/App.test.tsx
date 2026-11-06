@@ -499,3 +499,44 @@ describe('App delete', () => {
     expect(screen.queryByRole('list')).toBeNull();
   });
 });
+
+describe('App roles and labels', () => {
+  it('exposes each todo as a list item with a labelled checkbox and a labelled delete button', async () => {
+    vi.mocked(listTodos).mockReset();
+    vi.mocked(listTodos).mockResolvedValue({ ok: true, data: [todoB, todoA] });
+    render(<App />);
+
+    const list = await screen.findByRole('list', { name: 'Todos' });
+    const items = within(list).getAllByRole('listitem');
+    expect(items).toHaveLength(2);
+    for (const [item, label] of [
+      [items[0], '<b>x</b>'],
+      [items[1], 'first'],
+    ] as const) {
+      expect(within(item as HTMLElement).getByRole('checkbox', { name: label })).toBeDefined();
+      expect(
+        within(item as HTMLElement).getByRole('button', { name: `Delete ${label}` }),
+      ).toBeDefined();
+    }
+    expect(screen.getAllByRole('status')).toHaveLength(1);
+    expect(screen.getByRole('textbox', { name: 'New todo' })).toBeDefined();
+  });
+
+  it('tabs from the input to Add, then through each todo checkbox and delete button', async () => {
+    vi.mocked(listTodos).mockReset();
+    vi.mocked(listTodos).mockResolvedValue({ ok: true, data: [todoB] });
+    render(<App />);
+    await screen.findByRole('list', { name: 'Todos' });
+
+    const order = [
+      screen.getByRole('textbox', { name: 'New todo' }),
+      screen.getByRole('button', { name: 'Add' }),
+      screen.getByRole('checkbox', { name: '<b>x</b>' }),
+      screen.getByRole('button', { name: 'Delete <b>x</b>' }),
+    ];
+    const tabbable = Array.from(
+      document.querySelectorAll<HTMLElement>('input, button, [tabindex]'),
+    ).filter((el) => !(el as HTMLInputElement).disabled);
+    expect(tabbable).toEqual(order);
+  });
+});

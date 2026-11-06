@@ -18,6 +18,7 @@
   min-height: var(--list-min-height);
 }
 
+/* Keep in step with --breakpoint-sm in tokens.css. */
 @media (min-width: 40rem) {
   .main {
     gap: var(--space-6);

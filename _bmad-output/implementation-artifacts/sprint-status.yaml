@@ -43,12 +43,12 @@ development_status:
   1-5-e2e-harness-proves-the-empty-and-failed-load-journeys-agains: done
   epic-1-retrospective: optional
 
-  epic-2: in-progress
+  epic-2: done
   2-1-create-a-todo-through-the-api: done
   2-2-add-a-todo-from-the-input: done
   2-3-tick-and-untick-a-todo: done
   2-4-delete-a-todo-and-publish-the-api-contract: done
-  2-5-keyboard-screen-reader-and-small-screen-fit: backlog
+  2-5-keyboard-screen-reader-and-small-screen-fit: done
   epic-2-retrospective: optional
 
   epic-3: backlog

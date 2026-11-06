@@ -650,3 +650,33 @@ and is linked from the README; `docs/architecture.md` keeps its summary table.
 **Limitations.** With DELETE live, the E2E purge empties the store, which closes the Story 1.5
 and 2.2 deferred hazard about files that sort after `stack.spec.ts`. The runner contract check
 (red suite exits non-zero and still tears down) is still only verified by hand.
+
+## Story 2.5: Keyboard, screen reader and small-screen fit
+
+**Date.** 2026-11-06.
+
+**Agent usage.** Run unattended from `epics.md`. The earlier stories had already built 44 px
+controls, focus outlines, a single `role="status"` region and a wrapping layout, so this story was
+mostly proof: component tests for roles, names and tab order, `e2e/error-handling.spec.ts`
+(UJ-3: a `page.route` abort on the create `POST`, then `unroute` and a successful create) and
+`e2e/mobile.spec.ts` (the main journey at 360 px, bounding boxes of at least 44 px, and no
+horizontal overflow from 320 px to 1920 px). The one source change is `--breakpoint-sm` in
+`tokens.css`.
+
+**Prompts.** None beyond the owner's instruction to finish without review.
+
+**MCPs and tools.** None. Playwright under the Story 1.5 harness.
+
+**What the AI missed, and debugging.** Nothing failed on first run. Custom properties cannot be
+used inside `@media`, so the "single breakpoint in `tokens.css`" is a token plus a comment that
+`App.module.css` repeats `40rem`; a CSS preprocessor would remove the repeat but is out of scope.
+The checkbox control itself is 24 px; the 44 px target is its label, which spans the row and
+toggles it, and the test measures the label.
+
+**Decisions made while implementing.** Tab order is asserted in jsdom from document order (input,
+Add, then each checkbox and Delete); real focus movement is exercised by the E2E specs.
+
+**Review rounds.** None run, by the owner's instruction.
+
+**Limitations.** Contrast and screen reader output are not measured here; Story 3.2 runs the axe
+audit.
