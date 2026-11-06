@@ -182,11 +182,15 @@ Playwright's; a failed `up` exits non-zero after the teardown. The separate proj
 mean the default stack on 8080, if it is running, keeps running and keeps its data; nothing under
 project `todo` is touched. Afterwards `docker compose -p todo-e2e ps -a` lists nothing.
 
-Three spec files run in order: `empty-state.spec.ts` (Empty State on a fresh store),
-`load-failure.spec.ts` (Error State and Retry when the list request is aborted in the browser with
-`page.route`; the API has no test endpoint) and `stack.spec.ts` (the container contract: security
-headers and `/healthz`, `/api/` passthrough, one JSON log line per request, non-root users, and
-Todos surviving `docker compose restart`). Every spec purges the store before each test through
+Fourteen spec files run: the journeys (`journeys.spec.ts` for UJ-1 and UJ-2,
+`error-handling.spec.ts` for UJ-3), the actions (`create`, `validation`, `complete`, `delete`),
+the states (`empty-state.spec.ts`, `load-failure.spec.ts`, where the list request is aborted in
+the browser with `page.route`; the API has no test endpoint), quality gates (`accessibility.spec.ts`
+runs axe-core on every state at 360 and 1280 px, `keyboard.spec.ts`, `mobile.spec.ts`,
+`performance.spec.ts` with 200 Todos, `security.spec.ts`) and `stack.spec.ts` (the container
+contract: security headers and `/healthz`, gzip and caching of the bundle, `/api/` passthrough,
+one JSON log line per request, non-root users, and Todos surviving `docker compose restart`,
+which runs last). Every spec purges the store before each test through
 the API: it lists the Todos and deletes each one through `DELETE /api/v1/todos/:id`. `down -v`
 removes the volume at the end of the run.
 
@@ -194,3 +198,18 @@ Extra arguments go to Playwright, for example `npm run test:e2e -- --grep "Empty
 `npm run test:e2e -- --headed`. On a failure Playwright keeps a trace under `e2e/test-results/`
 (`npx playwright show-trace <trace.zip>`); the stack is still torn down. To run the specs alone
 against a stack you started by hand, see [e2e/README.md](e2e/README.md).
+
+## Documentation
+
+- [docs/api.md](docs/api.md): the API contract (paths, verbs, bodies, status and error codes).
+- [docs/architecture.md](docs/architecture.md): how the system is built and why.
+- [docs/bmad-process.md](docs/bmad-process.md): how BMAD guided the build, with links to the PRD, architecture spine and epics.
+- [docs/ai-integration-log.md](docs/ai-integration-log.md): an entry per story on AI use, prompts, tests and limits.
+
+### QA reports
+
+- [Coverage](docs/qa/coverage.md): per-app numbers, gap analysis, mutation spot checks.
+- [Accessibility](docs/qa/accessibility.md): axe audit of every state, keyboard findings, manual checks still open.
+- [Performance](docs/qa/performance.md): 200-item timing and Lighthouse mobile score.
+- [Security review](docs/qa/security.md): checks with evidence, fixes and accepted risks.
+- [Journeys and walkthrough](docs/qa/walkthrough.md): journey to spec map and the unguided-walkthrough protocol (not yet performed).

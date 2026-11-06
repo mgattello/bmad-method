@@ -680,3 +680,144 @@ Add, then each checkbox and Delete); real focus movement is exercised by the E2E
 
 **Limitations.** Contrast and screen reader output are not measured here; Story 3.2 runs the axe
 audit.
+
+## Story 3.1: Coverage gate and gap analysis
+
+**Date.** 2026-11-06.
+
+**Agent usage.** The coverage gate (70% lines and branches per app) already existed in each
+`vitest.config.ts`, so the story was the analysis. The agent read the v8 reports, found two
+uncovered branches, and ran eight hand-made mutations (trim removed, not-found check removed,
+off-by-one limit, ignored error code, wrong toggle status, create at the end, guard removed) to see
+whether the tests would notice. All eight failed a test. Written up in `docs/qa/coverage.md`.
+
+**Prompts.** "Complete without my review" was the only instruction.
+
+**MCPs and tools.** None. Vitest coverage, `sed` mutations reverted with `git checkout`.
+
+**What the AI missed, and debugging.** The first draft of the report described the uncovered
+branch at `sqlite-todo-repository.ts` line 37 as a defensive branch in database setup without
+reading the line. It is a v8 attribution at the class declaration. Corrected after checking the
+source.
+
+**Decisions made while implementing.** Mutation spot checks by hand instead of adding a mutation
+testing dependency.
+
+**Review rounds.** None, by the owner's instruction.
+
+**Limitations.** Eight mutations are a sample, not a mutation score.
+
+## Story 3.2: Accessibility audit
+
+**Date.** 2026-11-06.
+
+**Agent usage.** Added `@axe-core/playwright` 4.14.0 and `e2e/accessibility.spec.ts` (four states
+at 360 px and 1280 px, failing on critical or serious), plus `e2e/keyboard.spec.ts`.
+
+**Prompts.** None beyond the unattended instruction.
+
+**MCPs and tools.** axe-core through Playwright. A negative control on a deliberately bad page
+showed the audit reports `button-name` and `image-alt` as critical.
+
+**What the AI missed, and debugging.** axe reported zero violations, but the keyboard journey test
+failed: a Todo's checkbox is disabled while its write is pending, which drops focus, so a second
+Space did nothing. The AI had written the pending-disable rule in Story 2.3 without considering
+focus. Fixed by refocusing the control that was used when the write ends, with component tests.
+
+**Decisions made while implementing.** Fail on critical and serious, log moderate and minor.
+
+**Review rounds.** None, by the owner's instruction.
+
+**Limitations.** Manual screen-reader and Firefox/Safari checks need a person and are recorded as
+open in `docs/qa/accessibility.md`. Story 3.2 therefore stays `in-progress` in the sprint file.
+
+## Story 3.3: Performance report
+
+**Date.** 2026-11-06.
+
+**Agent usage.** `e2e/performance.spec.ts` seeds 200 Todos and times render, create, tick and
+delete. Lighthouse 12.8.2 (mobile preset) ran three times against the built images.
+
+**Prompts.** None.
+
+**MCPs and tools.** Lighthouse CLI. The Chrome DevTools MCP was not available in this session, so
+it was not used and the report says so.
+
+**What the AI missed, and debugging.** The first Lighthouse run scored 0.85. The AI had never
+checked that nginx compresses responses; the 290 KiB bundle went out raw. Adding `gzip on` and a
+one-year `expires` for hashed assets raised the score to 0.97 on three runs. A stack test now
+guards both and confirms the security headers still apply to `/assets/`.
+
+**Decisions made while implementing.** `expires` rather than `add_header` so server-level headers
+keep inheriting. E2E bounds are generous (2 s and 500 ms) to stay stable.
+
+**Review rounds.** None, by the owner's instruction.
+
+**Limitations.** The manual real-device check is not done.
+
+## Story 3.4: Security review
+
+**Date.** 2026-11-06.
+
+**Agent usage.** Searched for unsafe rendering and SQL construction, read both Dockerfiles and
+`nginx.conf`, ran `npm audit`, and added an integration test (HTML and SQL payloads stored
+verbatim, a SQL-looking id is a 404 that changes nothing) and an E2E XSS test.
+
+**Prompts.** None.
+
+**MCPs and tools.** `grep`, `npm audit`, Docker.
+
+**What the AI missed, and debugging.** One of the evidence greps silently failed on a shell glob
+(`no matches found`) and the first draft of the report claimed a clean result. It was re-run
+properly before the claim was kept. The review itself found the missing `frame-ancestors`
+coverage: CSP `default-src` does not stop framing, so `X-Frame-Options: DENY` and
+`Referrer-Policy: no-referrer` were added.
+
+**Decisions made while implementing.** Dev-only moderate audit findings in the ESLint toolchain
+are an accepted risk, not an upgrade to a breaking major.
+
+**Review rounds.** None, by the owner's instruction.
+
+**Limitations.** This is a code and configuration review, not a penetration test.
+
+## Story 3.5: Journey coverage
+
+**Date.** 2026-11-06.
+
+**Agent usage.** `e2e/journeys.spec.ts` for UJ-1 (360 px, four creates, empty-line refusal) and UJ-2
+(second browser context). UJ-3 and the restart journey were already covered. `docs/qa/walkthrough.md`
+maps every journey to its spec.
+
+**Prompts.** None.
+
+**MCPs and tools.** Playwright.
+
+**What the AI missed, and debugging.** Nothing failed on first run.
+
+**Decisions made while implementing.** The unguided walkthrough (SM-1) needs a person who has not
+seen the app. The AI cannot supply one, so `walkthrough.md` holds the protocol with every result
+marked `pending` and Story 3.5 stays `in-progress`.
+
+**Review rounds.** None, by the owner's instruction.
+
+**Limitations.** The human walkthrough is not done.
+
+## Story 3.6: Final documentation
+
+**Date.** 2026-11-06.
+
+**Agent usage.** README documentation and QA links, `docs/bmad-process.md`, and the entries above.
+
+**Prompts.** None.
+
+**MCPs and tools.** None.
+
+**What the AI missed, and debugging.** The framework comparison heading in the course brief has no
+content, so whether a comparison is expected is unresolved and recorded as such, not invented.
+
+**Decisions made while implementing.** The project brief is listed as a separate pending
+deliverable rather than claimed.
+
+**Review rounds.** None, by the owner's instruction.
+
+**Limitations.** The clean-checkout README run is described below, not witnessed by a second person.
