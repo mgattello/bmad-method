@@ -1,7 +1,7 @@
 import { DESCRIPTION_MAX, type Todo } from '@todo/contract';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createTodo, listTodos, type ApiResult } from '../api/todos-client.js';
+import { createTodo, listTodos, updateTodo, type ApiResult } from '../api/todos-client.js';
 import { useTodos } from './use-todos.js';
 
 vi.mock('../api/todos-client.js');
@@ -287,5 +287,170 @@ describe('useTodos create', () => {
     await expect(outcome).resolves.toBe(true);
     expect(createTodo).toHaveBeenCalledTimes(1);
     expect(result.current.state).toEqual({ status: 'error', code: 'INTERNAL_ERROR' });
+  });
+});
+
+describe('useTodos toggle', () => {
+  beforeEach(() => {
+    vi.mocked(listTodos).mockReset();
+    vi.mocked(createTodo).mockReset();
+    vi.mocked(updateTodo).mockReset();
+  });
+
+  async function renderReady(todos: Todo[] = [todoA, todoB]) {
+    vi.mocked(listTodos).mockResolvedValue({ ok: true, data: todos });
+    const rendered = renderHook(() => useTodos());
+    await waitFor(() => expect(rendered.result.current.state.status).toBe('ready'));
+    return rendered;
+  }
+
+  it('sends the flipped status and replaces the item in place from the response', async () => {
+    const pending = deferred<Todo>();
+    vi.mocked(updateTodo).mockReturnValueOnce(pending.promise);
+    const { result } = await renderReady([todoA, todoB, todoC]);
+
+    let outcome: Promise<void> = Promise.resolve();
+    act(() => {
+      outcome = result.current.toggle(todoA);
+    });
+    expect(updateTodo).toHaveBeenCalledWith('a', { completed: true });
+    expect(result.current.pendingIds.has('a')).toBe(true);
+    expect(result.current.state).toEqual({ status: 'ready', todos: [todoA, todoB, todoC] });
+
+    await act(async () => {
+      pending.resolve({ ok: true, data: { ...todoA, completed: true } });
+      await outcome;
+    });
+    expect(result.current.state).toEqual({
+      status: 'ready',
+      todos: [{ ...todoA, completed: true }, todoB, todoC],
+    });
+    expect(result.current.pendingIds.size).toBe(0);
+    expect(result.current.writeError).toBeNull();
+  });
+
+  it('sends completed false for a Completed Todo', async () => {
+    vi.mocked(updateTodo).mockResolvedValueOnce({ ok: true, data: { ...todoB, completed: false } });
+    const { result } = await renderReady();
+
+    await act(async () => {
+      await result.current.toggle(todoB);
+    });
+
+    expect(updateTodo).toHaveBeenCalledWith('b', { completed: false });
+  });
+
+  it('ignores a second toggle on the same id while pending', async () => {
+    const pending = deferred<Todo>();
+    vi.mocked(updateTodo).mockReturnValueOnce(pending.promise);
+    const { result } = await renderReady();
+
+    let first: Promise<void> = Promise.resolve();
+    act(() => {
+      first = result.current.toggle(todoA);
+      void result.current.toggle(todoA);
+    });
+    await act(async () => {
+      pending.resolve({ ok: true, data: { ...todoA, completed: true } });
+      await first;
+    });
+
+    expect(updateTodo).toHaveBeenCalledTimes(1);
+  });
+
+  it('runs toggles on two ids independently', async () => {
+    const one = deferred<Todo>();
+    const two = deferred<Todo>();
+    vi.mocked(updateTodo).mockReturnValueOnce(one.promise).mockReturnValueOnce(two.promise);
+    const { result } = await renderReady();
+
+    let p1: Promise<void> = Promise.resolve();
+    let p2: Promise<void> = Promise.resolve();
+    act(() => {
+      p1 = result.current.toggle(todoA);
+      p2 = result.current.toggle(todoB);
+    });
+    expect(updateTodo).toHaveBeenCalledTimes(2);
+    expect([...result.current.pendingIds].sort()).toEqual(['a', 'b']);
+
+    await act(async () => {
+      one.resolve({ ok: true, data: { ...todoA, completed: true } });
+      two.resolve({ ok: true, data: { ...todoB, completed: false } });
+      await Promise.all([p1, p2]);
+    });
+    expect(result.current.pendingIds.size).toBe(0);
+  });
+
+  it('keeps the list and sets a toggle error on a failure', async () => {
+    vi.mocked(updateTodo).mockResolvedValueOnce({ ok: false, code: 'INTERNAL_ERROR' });
+    const { result } = await renderReady();
+
+    await act(async () => {
+      await result.current.toggle(todoA);
+    });
+
+    expect(result.current.state).toEqual({ status: 'ready', todos: [todoA, todoB] });
+    expect(result.current.writeError).toEqual({ action: 'toggle', code: 'INTERNAL_ERROR' });
+    expect(result.current.pendingIds.size).toBe(0);
+  });
+
+  it('removes the item and sets the error on NOT_FOUND', async () => {
+    vi.mocked(updateTodo).mockResolvedValueOnce({ ok: false, code: 'NOT_FOUND' });
+    const { result } = await renderReady();
+
+    await act(async () => {
+      await result.current.toggle(todoA);
+    });
+
+    expect(result.current.state).toEqual({ status: 'ready', todos: [todoB] });
+    expect(result.current.writeError).toEqual({ action: 'toggle', code: 'NOT_FOUND' });
+  });
+
+  it('clears a previous write error when the next write starts, in both directions', async () => {
+    vi.mocked(updateTodo)
+      .mockResolvedValueOnce({ ok: false, code: 'INTERNAL_ERROR' })
+      .mockResolvedValueOnce({ ok: true, data: { ...todoA, completed: true } });
+    vi.mocked(createTodo).mockResolvedValueOnce({ ok: true, data: todoC });
+    const { result } = await renderReady();
+
+    await act(async () => {
+      await result.current.toggle(todoA);
+    });
+    expect(result.current.writeError?.action).toBe('toggle');
+    await act(async () => {
+      await result.current.create('Buy milk');
+    });
+    expect(result.current.writeError).toBeNull();
+
+    vi.mocked(createTodo).mockResolvedValueOnce({ ok: false, code: 'INTERNAL_ERROR' });
+    await act(async () => {
+      await result.current.create('Buy milk');
+    });
+    expect(result.current.writeError?.action).toBe('create');
+    await act(async () => {
+      await result.current.toggle(todoA);
+    });
+    expect(result.current.writeError).toBeNull();
+  });
+
+  it('ignores a toggle result when the list is no longer ready', async () => {
+    const pending = deferred<Todo>();
+    vi.mocked(updateTodo).mockReturnValueOnce(pending.promise);
+    const { result } = await renderReady();
+
+    let outcome: Promise<void> = Promise.resolve();
+    act(() => {
+      outcome = result.current.toggle(todoA);
+    });
+    vi.mocked(listTodos).mockReturnValueOnce(new Promise(() => {}));
+    act(() => {
+      void result.current.load();
+    });
+    await act(async () => {
+      pending.resolve({ ok: true, data: { ...todoA, completed: true } });
+      await outcome;
+    });
+
+    expect(result.current.state).toEqual({ status: 'loading' });
   });
 });

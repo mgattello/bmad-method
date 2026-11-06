@@ -1,4 +1,4 @@
-import { ErrorCode, TODOS_PATH, type Todo } from '@todo/contract';
+import { ErrorCode, TODOS_PATH, todoPath, type Todo, type UpdateTodoBody } from '@todo/contract';
 
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; code: ErrorCode };
 
@@ -41,6 +41,22 @@ export async function createTodo(description: string): Promise<ApiResult<Todo>> 
       method: 'POST',
       headers: { accept: 'application/json', 'content-type': 'application/json' },
       body: JSON.stringify({ description }),
+    });
+    const body: unknown = await res.json().catch(() => undefined);
+    if (res.ok) return isTodo(body) ? { ok: true, data: body } : failure();
+    return { ok: false, code: envelopeCode(body) };
+  } catch {
+    return failure();
+  }
+}
+
+// The only place the web talks to PATCH; takes a full UpdateTodoBody so later edits reuse it.
+export async function updateTodo(id: string, patch: UpdateTodoBody): Promise<ApiResult<Todo>> {
+  try {
+    const res = await fetch(todoPath(id), {
+      method: 'PATCH',
+      headers: { accept: 'application/json', 'content-type': 'application/json' },
+      body: JSON.stringify(patch),
     });
     const body: unknown = await res.json().catch(() => undefined);
     if (res.ok) return isTodo(body) ? { ok: true, data: body } : failure();

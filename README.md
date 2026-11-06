@@ -48,7 +48,7 @@ Run from the repository root.
 | `npm ci`           | Install every workspace from the one root `package-lock.json`                                        |
 | `npm run build`    | Build contract, then api, then web                                                                   |
 | `npm test`         | Unit tests with coverage (70% lines and branches per app) for all three                              |
-| `npm run test:int` | API integration tests (`apps/api/test/*.int.test.ts`): todos GET and POST, health, errors            |
+| `npm run test:int` | API integration tests (`apps/api/test/*.int.test.ts`): todos GET, POST and PATCH, health, errors     |
 | `npm run test:e2e` | Build the images, run Playwright on Chromium against them (project `todo-e2e`, port 8081), tear down |
 | `npm run lint`     | Build contract, ESLint, Prettier check, then type-check every workspace (tests included)             |
 | `npm run format`   | Prettier write                                                                                       |
@@ -70,6 +70,7 @@ file at `DB_PATH` on first start, and reloads on source changes (`tsx watch`). T
 
 ```sh
 curl -X POST localhost:3000/api/v1/todos -H 'content-type: application/json' -d '{"description":"Buy milk"}'
+curl -X PATCH localhost:3000/api/v1/todos/<id> -H 'content-type: application/json' -d '{"completed":true}'
 ```
 
 That answers `201` with the Todo (server-assigned `id` and `createdAt`, description trimmed), and
@@ -100,7 +101,12 @@ or the Add control sends the trimmed description to `POST /api/v1/todos` and the
 goes to the top of the list; while a create is pending, or the list is loading or failed, Add is
 disabled. An empty or whitespace-only description, or one over `DESCRIPTION_MAX` characters, is
 rejected locally with the same message a server `VALIDATION_ERROR` shows; a failed create keeps
-the typed text and focus. Copy for every state, validation and failure message lives in
+the typed text and focus. The checkbox toggles a Todo through `PATCH /api/v1/todos/:id`: nothing
+changes until the response arrives (no optimistic update), then the item is replaced in place from
+the returned Todo; while that write is pending the item's checkbox and Delete are disabled and
+other items stay usable. A failed toggle leaves the item as it was and says so in the status
+region; a `404` removes the item from the list. `PATCH` with `{}` or an unknown field is
+`400 VALIDATION_ERROR` and an unknown id is `404 NOT_FOUND`. Copy for every state, validation and failure message lives in
 `apps/web/src/copy.ts`; the server's error `message` is never shown. `e2e/create.spec.ts` and
 `e2e/validation.spec.ts` cover the input end to end and run under the Story 1.5 harness.
 

@@ -41,4 +41,50 @@ describe('TodoItem', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Delete first' }));
     }).not.toThrow();
   });
+
+  it('disables the checkbox and delete while pending and delete fires nothing', () => {
+    const onDelete = vi.fn();
+    render(
+      <ul>
+        <TodoItem todo={todo} pending onDelete={onDelete} />
+      </ul>,
+    );
+
+    const checkbox = screen.getByRole('checkbox', { name: 'first' });
+    const remove = screen.getByRole('button', { name: 'Delete first' });
+    expect((checkbox as HTMLInputElement).disabled).toBe(true);
+    expect((remove as HTMLButtonElement).disabled).toBe(true);
+    // jsdom still dispatches a click on a disabled checkbox; browsers do not, so only the button is clicked.
+    fireEvent.click(remove);
+    expect(onDelete).not.toHaveBeenCalled();
+  });
+
+  it('enables both controls when not pending', () => {
+    render(
+      <ul>
+        <TodoItem todo={todo} />
+      </ul>,
+    );
+
+    expect((screen.getByRole('checkbox') as HTMLInputElement).disabled).toBe(false);
+    expect((screen.getByRole('button') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('checks the box and applies the completed class only when completed', () => {
+    const { rerender } = render(
+      <ul>
+        <TodoItem todo={todo} />
+      </ul>,
+    );
+    expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(false);
+    expect(screen.getByRole('listitem').className).not.toContain('completed');
+
+    rerender(
+      <ul>
+        <TodoItem todo={{ ...todo, completed: true }} />
+      </ul>,
+    );
+    expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(true);
+    expect(screen.getByRole('listitem').className).toContain('completed');
+  });
 });

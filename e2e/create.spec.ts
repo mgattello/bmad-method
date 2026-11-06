@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { purgeTodos } from './support/todos';
+import { purgeTodos } from './support.ts';
 
 test.beforeEach(async ({ page, request }) => {
   await purgeTodos(request);

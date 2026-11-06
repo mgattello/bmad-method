@@ -509,6 +509,7 @@ creates the only row of the run. Firefox and WebKit are out of scope by the spec
 headless shell is what the run uses, and `--headed` needs the full Chromium that the same
 `npx playwright install chromium` installs. The `up`-failure row was reproduced with a port
 conflict only; a failing `HEALTHCHECK` would surface through the same `--wait` non-zero status.
+
 ## Story 2.2: Add a Todo from the input
 
 **Date:** 2026-10-26
@@ -582,3 +583,39 @@ store. The `git diff main` boundary check is read against the spec's
 baseline commit `82c339d`, because this branch predates the Story 1.4 merge and `main` now holds
 the Dockerfiles that the branch does not. Focus assertions run in jsdom, so visible focus and the
 danger border are asserted by CSS rather than by a test.
+
+## Story 2.3: Tick and untick a Todo
+
+**Date.** 2026-11-06.
+
+**Agent usage.** The BMAD build workflow (spec, then dispatch) wrote `PATCH /api/v1/todos/:id`
+end to end: route, `TodoService.update`, repository `findById` and `update`, the web client
+`updateTodo`, the `useTodos` `toggle` and `pendingIds`, and the disabled-while-pending item.
+A second agent session took over after the API half was written and left uncommitted; the web
+half, tests, E2E spec and docs were finished from that state.
+
+**Prompts.** "Take over" was enough because the spec carried the I/O matrix and the golden hook
+example; the spec's Code Map named every file.
+
+**MCPs and tools.** None. Vitest for unit, component and integration tests, Playwright (Story
+1.5 harness) for `e2e/complete.spec.ts`.
+
+**What the AI missed, and debugging.** (1) Playwright's `check()` and `uncheck()` fail with
+"Clicking the checkbox did not change its state" because the app deliberately has no optimistic
+update; the spec now clicks and then asserts the state. (2) jsdom dispatches a click on a
+disabled checkbox where browsers do not, so the component test asserts the `disabled` attribute
+for the checkbox and the no-handler check only for the Delete button. (3) Story 2.2 had shipped
+its own `e2e/support/` helpers in parallel with Story 1.5's `support.ts`; they were merged into
+`support.ts` and the duplicate directory removed.
+
+**Decisions made while implementing.** Not-found wins over an invalid description (the service
+looks the Todo up first). `toggle` sends the flipped status from the rendered Todo and never a
+description. `updateTodo` takes a full `UpdateTodoBody` so Story 2.4 and a later edit reuse it.
+`App` marks the input invalid only for the create action.
+
+**Review rounds.** None run: the owner asked for completion without review, so the Story 2.3
+change was verified by tests only.
+
+**Limitations.** E2E rows left by `create.spec.ts` persist until Story 2.4 ships `DELETE`, so
+`empty-state` and `load-failure` fail on a store that is not empty; Story 2.4 makes the purge
+effective.

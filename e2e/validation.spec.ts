@@ -1,6 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { DESCRIPTION_MAX, FAILURE_COPY, VALIDATION_COPY } from './support/copy';
-import { purgeTodos } from './support/todos';
+import { DESCRIPTION_MAX, FAILURE_COPY, VALIDATION_COPY, purgeTodos } from './support.ts';
 
 test.beforeEach(async ({ page, request }) => {
   await purgeTodos(request);

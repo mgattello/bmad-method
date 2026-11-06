@@ -4,12 +4,13 @@ import styles from './TodoItem.module.css';
 
 type Props = {
   todo: Todo;
+  pending?: boolean;
   onToggle?: (todo: Todo) => void;
   onDelete?: (todo: Todo) => void;
 };
 
-// Description is rendered as text content only; toggle and delete are wired in Epic 2.
-export function TodoItem({ todo, onToggle, onDelete }: Props) {
+// Description is rendered as text content only; toggle is wired, delete lands in Story 2.4.
+export function TodoItem({ todo, pending, onToggle, onDelete }: Props) {
   const checkboxId = useId();
   const className = todo.completed ? `${styles.item} ${styles.completed}` : styles.item;
 
@@ -20,6 +21,7 @@ export function TodoItem({ todo, onToggle, onDelete }: Props) {
         className={styles.checkbox}
         type="checkbox"
         checked={todo.completed}
+        disabled={pending}
         onChange={() => onToggle?.(todo)}
       />
       <label className={styles.description} htmlFor={checkboxId}>
@@ -29,6 +31,7 @@ export function TodoItem({ todo, onToggle, onDelete }: Props) {
         type="button"
         className={styles.delete}
         aria-label={`Delete ${todo.description}`}
+        disabled={pending}
         onClick={() => onDelete?.(todo)}
       >
         Delete

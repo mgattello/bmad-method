@@ -1,7 +1,7 @@
 import { DESCRIPTION_MAX, type Todo } from '@todo/contract';
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createTodo, listTodos, type ApiResult } from './api/todos-client.js';
+import { createTodo, listTodos, updateTodo, type ApiResult } from './api/todos-client.js';
 import { App } from './App.js';
 import itemStyles from './components/TodoItem.module.css';
 import { addLabel, emptyStateCopy, errorCopy, loadingCopy, retryLabel } from './copy.js';
@@ -324,5 +324,98 @@ describe('App create', () => {
     expect(addButton()).toHaveProperty('disabled', true);
     expect(screen.getAllByRole('status')).toHaveLength(1);
     expect(screen.getByRole('status').textContent).toContain(errorCopy.load.INTERNAL_ERROR);
+  });
+});
+
+describe('App toggle', () => {
+  beforeEach(() => {
+    vi.mocked(listTodos).mockReset();
+    vi.mocked(updateTodo).mockReset();
+    vi.mocked(listTodos).mockResolvedValue({ ok: true, data: [todoB, todoA] });
+  });
+
+  it('keeps the checkbox until the response, disables only that item, then checks it', async () => {
+    const pending = deferred<Todo>();
+    vi.mocked(updateTodo).mockReturnValueOnce(pending.promise);
+    render(<App />);
+    const box = (await screen.findByRole('checkbox', { name: '<b>x</b>' })) as HTMLInputElement;
+
+    fireEvent.click(box);
+    fireEvent.click(box);
+
+    expect(updateTodo).toHaveBeenCalledTimes(1);
+    expect(updateTodo).toHaveBeenCalledWith('b', { completed: true });
+    expect(box.checked).toBe(false);
+    expect(box.disabled).toBe(true);
+    expect(
+      (screen.getByRole('button', { name: 'Delete <b>x</b>' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    expect((screen.getByRole('checkbox', { name: 'first' }) as HTMLInputElement).disabled).toBe(
+      false,
+    );
+
+    await act(async () => {
+      pending.resolve({ ok: true, data: { ...todoB, completed: true } });
+    });
+    const after = screen.getByRole('checkbox', { name: '<b>x</b>' }) as HTMLInputElement;
+    expect(after.checked).toBe(true);
+    expect(after.disabled).toBe(false);
+    expect(screen.getAllByRole('listitem')[0]?.className).toContain(itemStyles.completed);
+    expect(screen.getByRole('status').textContent).toBe('');
+  });
+
+  it('unticks a Completed Todo', async () => {
+    vi.mocked(updateTodo).mockResolvedValueOnce({ ok: true, data: { ...todoA, completed: false } });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'first' }));
+
+    await waitFor(() =>
+      expect((screen.getByRole('checkbox', { name: 'first' }) as HTMLInputElement).checked).toBe(
+        false,
+      ),
+    );
+    expect(updateTodo).toHaveBeenCalledWith('a', { completed: false });
+  });
+
+  it('keeps the state and names the update on a failure, without marking the input invalid', async () => {
+    vi.mocked(updateTodo).mockResolvedValueOnce({ ok: false, code: 'VALIDATION_ERROR' });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole('checkbox', { name: '<b>x</b>' }));
+
+    expect(await screen.findByText(errorCopy.toggle.VALIDATION_ERROR)).toBeDefined();
+    const box = screen.getByRole('checkbox', { name: '<b>x</b>' }) as HTMLInputElement;
+    expect(box.checked).toBe(false);
+    expect(box.disabled).toBe(false);
+    expect(screen.getByRole('textbox', { name: 'New todo' }).getAttribute('aria-invalid')).not.toBe(
+      'true',
+    );
+    expect(screen.getAllByRole('status')).toHaveLength(1);
+    expect(document.body.textContent).not.toContain(serverMessage);
+  });
+
+  it('removes a vanished Todo and shows the Empty State when it was the last', async () => {
+    vi.mocked(listTodos).mockResolvedValue({ ok: true, data: [todoA] });
+    vi.mocked(updateTodo).mockResolvedValueOnce({ ok: false, code: 'NOT_FOUND' });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'first' }));
+
+    expect(await screen.findByText(emptyStateCopy)).toBeDefined();
+    expect(screen.getByRole('status').textContent).toBe(errorCopy.toggle.NOT_FOUND);
+  });
+
+  it('toggles from the keyboard', async () => {
+    vi.mocked(updateTodo).mockResolvedValueOnce({ ok: true, data: { ...todoB, completed: true } });
+    render(<App />);
+    const box = await screen.findByRole('checkbox', { name: '<b>x</b>' });
+
+    // Space on a focused checkbox dispatches a click; jsdom does not synthesize it.
+    box.focus();
+    fireEvent.click(box);
+
+    expect(updateTodo).toHaveBeenCalledWith('b', { completed: true });
+    expect(document.activeElement).toBe(screen.getByRole('checkbox', { name: '<b>x</b>' }));
   });
 });
